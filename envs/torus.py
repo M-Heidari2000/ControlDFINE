@@ -29,10 +29,10 @@ class Torus(gym.Env):
         
         super().__init__()
 
-        self.A = A
-        self.B = B
-        self.Ns = Ns
-        self.No = No
+        self.A = A.astype(np.float32)
+        self.B = B.astype(np.float32)
+        self.Ns = Ns.astype(np.float32)
+        self.No = No.astype(np.float32)
 
         self._verify_parameters()
         
@@ -42,8 +42,8 @@ class Torus(gym.Env):
         self.horizon = horizon
 
         self.state_space = spaces.Box(
-            low=np.array([0, 0]),
-            high=np.array([2*np.pi, 2*np.pi]),
+            low=np.array([-np.pi, -np.pi]),
+            high=np.array([np.pi, np.pi]),
             shape=(2, ),
             dtype=np.float32,
         )
@@ -134,8 +134,6 @@ class Torus(gym.Env):
             a_min=self.action_space.low,
             a_max=self.action_space.high,
         )
-
-        residual = self._state - self._target
 
         self._state = self._state @ self.A.T + action @ self.B.T
         if self.Ns is not None:

@@ -26,20 +26,36 @@ env:
     - [0.0, 0.0, 0.01]
 
 train:
-  num_updates: 1000
-  test_interval: 10
-  x_dim: 3
-  a_dim: 3
-  hidden_dim: 128
-  min_var: 1e-2
-  chunk_length: 24
-  prediction_k: 8
-  batch_size: 128
-  lr: 1e-4
-  eps: 1e-8
-  weight_decay: 1e-6
-  clip_grad_norm: 1.0
-  disable_gpu: False
-  filtering_weight: 1.0
-  mean_consistency_weight: 0.0
-  kl_consistency_weight: 0.0
+  backbone:
+    num_updates: 500
+    test_interval: 10
+    x_dim: 3
+    a_dim: 3
+    hidden_dim: 128
+    min_var: 1e-2
+    chunk_length: 24
+    prediction_k: 8
+    batch_size: 128
+    lr: 1e-4
+    eps: 1e-8
+    weight_decay: 1e-6
+    clip_grad_norm: 1.0
+    disable_gpu: False
+    filtering_weight: 1.0
+    mean_consistency_weight: 0.0
+    kl_consistency_weight: 0.0
+  cost:
+    num_updates: 1000
+    test_interval: 10
+    chunk_length: 24
+    batch_size: 256
+    lr: 1e-3
+    eps: 1e-8
+    weight_decay: 1e-6
+    clip_grad_norm: 1.0
+    disable_gpu: False
+
+evaluation:
+  num_points: 1
+  num_trials: 1
+  planning_horizon: 10

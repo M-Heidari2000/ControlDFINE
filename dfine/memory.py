@@ -1,3 +1,5 @@
+from __future__ import annotations
+import copy
 import minari
 import numpy as np
 from tqdm import tqdm
@@ -9,7 +11,7 @@ class ReplayBuffer:
     """
 
     @staticmethod
-    def load_from_minari(dataset: minari.MinariDataset):
+    def load_from_minari(dataset: minari.MinariDataset) -> ReplayBuffer:
         buffer = ReplayBuffer(
             capacity=dataset.total_steps,
             y_dim=dataset.observation_space.shape[0],
@@ -98,3 +100,10 @@ class ReplayBuffer:
         )
 
         return sampled_ys, sampled_us, sampled_cs, sampled_done
+    
+    
+    def map_costs(self, obs_target: np.ndarray) -> ReplayBuffer:
+        obs_target = obs_target.astype(np.float32).reshape(1, -1)
+        new_buffer = copy.deepcopy(self)
+        new_buffer.cs = np.linalg.norm(new_buffer.ys - obs_target, axis=1, keepdims=True) ** 2
+        return new_buffer

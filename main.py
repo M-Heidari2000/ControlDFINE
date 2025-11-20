@@ -13,7 +13,7 @@ from minari import MinariDataset
 from dfine.memory import ReplayBuffer
 from envs.utils import collect_data
 from dfine.train import train_backbone
-
+from dfine.evaluation import evaluate
 
 
 if __name__ == "__main__":
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     # train and save the backbone
     logging.info("training backbone ...")
     encoder, decoder, dynamics_model = train_backbone(
-        config=config.train,
+        config=config.train.backbone,
         train_buffer=train_buffer,
         test_buffer=test_buffer,
     )
@@ -70,6 +70,14 @@ if __name__ == "__main__":
     torch.save(dynamics_model.state_dict(), save_dir / "dynamics_model.pth")
 
     # test the model
-    #TODO
+    evaluate(
+        config=config.evaluation,
+        train_config=config.train.cost,
+        env=env,
+        dynamics_model=dynamics_model,
+        encoder=encoder,
+        train_buffer=train_buffer,
+        test_buffer=test_buffer
+    )
 
     wandb.finish()

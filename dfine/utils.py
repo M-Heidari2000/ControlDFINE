@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from torch.distributions import kl_divergence
 from torch.distributions import MultivariateNormal
 
@@ -20,6 +21,7 @@ def pearson_corr(
     corr = cov / (true_std.squeeze(0) * pred_std.squeeze(0) + 1e-8)  # (B, D)
     return corr.mean()
 
+
 def compute_consistency(
     prior: MultivariateNormal,
     posterior: MultivariateNormal,
@@ -33,3 +35,21 @@ def compute_consistency(
     kl_consistency = kl_divergence(posterior, prior).mean()
 
     return mean_consistency, kl_consistency
+
+
+def make_grid(
+    low: np.ndarray,
+    high: np.ndarray,
+    num_points: int=1,
+):
+    assert low.shape == high.shape
+
+    axes = []
+    for lo, hi in zip(low, high):
+        step = (hi - lo) / num_points
+        centers = lo + (np.arange(num_points) + 0.5) * step
+        axes.append(centers)
+
+    mesh = np.meshgrid(*axes, indexing="ij")
+    grid = np.stack(mesh, axis=-1).reshape(-1, low.shape[0])
+    return grid.astype(np.float32)

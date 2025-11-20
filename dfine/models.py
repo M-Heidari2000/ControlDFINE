@@ -105,7 +105,7 @@ class CostModel(nn.Module):
     def R(self):
         L = torch.tril(self.B)
         diagonals = nn.functional.softplus(L.diagonal()) + 1e-4
-        X = 1 - torch.eye(self.u_dim, device=self.device, dtype=torch.float32)
+        X = 1 - torch.eye(self.u_dim, device=self.B.device, dtype=torch.float32)
         L = L * X + diagonals.diag()
         return L @ L.T
     

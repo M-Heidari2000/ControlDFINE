@@ -255,7 +255,7 @@ def train_cost(
     device = "cuda" if (torch.cuda.is_available() and not config.disable_gpu) else "cpu"
 
     cost_model = CostModel(
-        x_dim=config.x_dim,
+        x_dim=dynamics_model.x_dim,
         u_dim=train_buffer.u_dim,
     ).to(device)
 
@@ -300,8 +300,8 @@ def train_cost(
 
         # initial belief over x0: N(0, I)
         posterior_dist = MultivariateNormal(
-            loc=torch.zeros((config.batch_size, config.x_dim), device=device),
-            covariance_matrix=torch.eye(config.x_dim, device=device).expand(config.batch_size, -1, -1)
+            loc=torch.zeros((config.batch_size, dynamics_model.x_dim), device=device),
+            covariance_matrix=torch.eye(dynamics_model.x_dim, device=device).expand(config.batch_size, -1, -1)
         )
         cost_loss = 0.0
 
@@ -346,8 +346,8 @@ def train_cost(
 
                 # initial belief over x0: N(0, I)
                 posterior_dist = MultivariateNormal(
-                    loc=torch.zeros((config.batch_size, config.x_dim), device=device),
-                    covariance_matrix=torch.eye(config.x_dim, device=device).expand(config.batch_size, -1, -1)
+                    loc=torch.zeros((config.batch_size, dynamics_model.x_dim), device=device),
+                    covariance_matrix=torch.eye(dynamics_model.x_dim, device=device).expand(config.batch_size, -1, -1)
                 )
                 cost_loss = 0.0
 

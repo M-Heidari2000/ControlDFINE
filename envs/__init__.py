@@ -10,6 +10,8 @@ def make(config: DictConfig):
             env = Torus(
                 A=np.array(config.A),
                 B=np.array(config.B),
+                Ns=np.array(config.Ns),
+                No=np.array(config.No),
                 horizon=config.horizon,
                 render_mode="rgb_array",
             )
