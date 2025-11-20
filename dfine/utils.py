@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from typing import Union, List, Dict
 from torch.distributions import kl_divergence
 from torch.distributions import MultivariateNormal
 
@@ -40,16 +41,47 @@ def compute_consistency(
 def make_grid(
     low: np.ndarray,
     high: np.ndarray,
-    num_points: int=1,
-):
+    num_regions: Union[int, np.ndarray],
+    num_points: int,
+    rng: np.random.Generator | None = None,
+) -> List[Dict[str, np.ndarray]]:
+
+    low = np.asarray(low, dtype=float)
+    high = np.asarray(high, dtype=float)
     assert low.shape == high.shape
+    d = low.shape[0]
 
-    axes = []
-    for lo, hi in zip(low, high):
-        step = (hi - lo) / num_points
-        centers = lo + (np.arange(num_points) + 0.5) * step
-        axes.append(centers)
+    if rng is None:
+        rng = np.random.default_rng()
 
-    mesh = np.meshgrid(*axes, indexing="ij")
-    grid = np.stack(mesh, axis=-1).reshape(-1, low.shape[0])
-    return grid.astype(np.float32)
+    if np.isscalar(num_regions):
+        num_regions = np.full(d, int(num_regions), dtype=int)
+    else:
+        num_regions = np.asarray(num_regions, dtype=int)
+        assert num_regions.shape == (d, )
+
+    widths = (high - low) / num_regions
+
+    regions: List[Dict[str, np.ndarray]] = []
+
+    for cell_index in np.ndindex(*num_regions):
+        cell_index = np.array(cell_index)
+
+        cell_low = low + cell_index * widths
+        cell_high = cell_low + widths
+
+        samples = rng.uniform(
+            low=cell_low,
+            high=cell_high,
+            size=(num_points, d),
+        ).astype(np.float32)
+
+        regions.append(
+            {
+                "low": cell_low.astype(np.float32),
+                "high": cell_high.astype(np.float32),
+                "samples": samples,
+            }
+        )
+
+    return regions

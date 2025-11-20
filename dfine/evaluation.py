@@ -32,7 +32,7 @@ def trial(
 
 
 def evaluate(
-    config: DictConfig,
+    eval_config: DictConfig,
     train_config: DictConfig,
     env: gym.Env,
     dynamics_model: Dynamics,
@@ -40,31 +40,36 @@ def evaluate(
     train_buffer: ReplayBuffer,
     test_buffer: ReplayBuffer,
 ):
-    state_targets = make_grid(
+    target_regions = make_grid(
         low=env.state_space.low,
         high=env.state_space.high,
-        num_points=config.num_points,
+        num_regions=eval_config.num_regions,
+        num_points=eval_config.num_points,
     )
-    obs_targets = env.manifold(state_targets)
-    costs = np.zeros((obs_targets.shape[0], config.num_trials))
 
-    for i, target in enumerate(obs_targets):
-        # train a cost function for each target
-        train_buffer = train_buffer.map_costs(obs_target=target)
-        test_buffer = test_buffer.map_costs(obs_target=target)
-        cost_model = train_cost(
-            config=train_config,
-            encoder=encoder,
-            dynamics_model=dynamics_model,
-            train_buffer=train_buffer,
-            test_buffer=test_buffer,
-        )
-        # create agent
-        agent = IMPCAgent(
-            encoder=encoder,
-            dynamics_model=dynamics_model,
-            cost_model=cost_model,
-            planning_horizon=config.planning_horizon,
-        )
-        for j in range(config.num_trials):
-            costs[i, j] = trial(env=env, agent=agent, obs_target=target)
+    for region in target_regions:
+        costs = []
+        for sample in region["samples"]:
+            # train a cost function for this target
+            obs_target = env.manifold(sample.reshape(1, -1)).flatten()
+            train_buffer = train_buffer.map_costs(obs_target=obs_target)
+            test_buffer = test_buffer.map_costs(obs_target=obs_target)
+            cost_model = train_cost(
+                config=train_config,
+                encoder=encoder,
+                dynamics_model=dynamics_model,
+                train_buffer=train_buffer,
+                test_buffer=test_buffer,
+            )
+            # create agent
+            agent = IMPCAgent(
+                encoder=encoder,
+                dynamics_model=dynamics_model,
+                cost_model=cost_model,
+                planning_horizon=eval_config.planning_horizon,
+            )
+            trial_cost = trial(env=env, agent=agent, obs_target=obs_target)
+            costs.append(trial_cost)
+        region["costs"] = np.array(costs)
+
+    return target_regions
