@@ -5,11 +5,11 @@ run_name: "DFINE"
 
 data:
   test_ratio: 0.2
-  num_episodes: 10
+  num_episodes: 100
 
 env:
   name: torus
-  horizon: 25
+  horizon: 100
 
   A:
     - [1.0, 0.0]
@@ -27,7 +27,7 @@ env:
 
 train:
   backbone:
-    num_updates: 10
+    num_updates: 2500
     test_interval: 10
     x_dim: 3
     a_dim: 3
@@ -45,17 +45,17 @@ train:
     mean_consistency_weight: 0.0
     kl_consistency_weight: 0.0
   cost:
-    num_updates: 10
+    num_updates: 3000
     test_interval: 10
     chunk_length: 24
     batch_size: 256
-    lr: 1e-3
+    lr: 5e-4
     eps: 1e-8
     weight_decay: 1e-6
     clip_grad_norm: 1.0
     disable_gpu: False
 
 evaluation:
-  num_points: 2
-  num_regions: 2
+  num_points: 10
+  num_regions: 4
   planning_horizon: 10
