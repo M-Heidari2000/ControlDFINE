@@ -3,8 +3,7 @@ import wandb
 import einops
 import torch.nn as nn
 from tqdm import tqdm
-from pathlib import Path
-from argparse import Namespace
+from omegaconf.dictconfig import DictConfig
 from torch.distributions import MultivariateNormal
 from .memory import ReplayBuffer
 from .utils import compute_consistency
@@ -18,31 +17,31 @@ from .models import (
 
 
 def train_backbone(
-    args: Namespace,
+    config: DictConfig,
     train_buffer: ReplayBuffer,
     test_buffer: ReplayBuffer,
 ):
 
     # define models and optimizer
-    device = "cuda" if (torch.cuda.is_available() and not args.disable_gpu) else "cpu"
+    device = "cuda" if (torch.cuda.is_available() and not config.disable_gpu) else "cpu"
 
     encoder = Encoder(
         y_dim=train_buffer.y_dim,
-        a_dim=args.a_dim,
-        hidden_dim=args.hidden_dim,
+        a_dim=config.a_dim,
+        hidden_dim=config.hidden_dim,
     ).to(device)
 
     decoder = Decoder(
         y_dim=train_buffer.y_dim,
-        a_dim=args.a_dim,
-        hidden_dim=args.hidden_dim,
+        a_dim=config.a_dim,
+        hidden_dim=config.hidden_dim,
     ).to(device)
 
     dynamics_model = Dynamics(
-        x_dim=args.x_dim,
+        x_dim=config.x_dim,
         u_dim=train_buffer.u_dim,
-        a_dim=args.a_dim,
-        hidden_dim=args.hidden_dim,
+        a_dim=config.a_dim,
+        hidden_dim=config.hidden_dim,
     ).to(device)
 
     wandb.watch([encoder, dynamics_model, decoder], log="all", log_freq=10)
@@ -53,15 +52,14 @@ def train_backbone(
         list(dynamics_model.parameters())
     )
 
-    optimizer = torch.optim.Adam(all_params, lr=args.lr, eps=args.eps, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(all_params, lr=config.lr, eps=config.eps, weight_decay=config.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer=optimizer,
-        T_max=args.num_updates
+        T_max=config.num_updates
     )
 
     # train and test loop
-    print(f"training on {device} ...")
-    for update in tqdm(range(args.num_updates)):
+    for update in tqdm(range(config.num_updates)):
         
         # train
         encoder.train()
@@ -69,29 +67,29 @@ def train_backbone(
         dynamics_model.train()
 
         y, u, _, _ = train_buffer.sample(
-            batch_size=args.batch_size,
-            chunk_length=args.chunk_length,
+            batch_size=config.batch_size,
+            chunk_length=config.chunk_length,
         )
 
         # convert to tensor, transform to device, reshape to time-first
         y = torch.as_tensor(y, device=device)
         y = einops.rearrange(y, "b l y -> l b y")
         a = encoder(einops.rearrange(y, "l b y -> (l b) y"))
-        a = einops.rearrange(a, "(l b) a -> l b a", b=args.batch_size)
+        a = einops.rearrange(a, "(l b) a -> l b a", b=config.batch_size)
         u = torch.as_tensor(u, device=device)
         u = einops.rearrange(u, "b l u -> l b u")
 
         # initial belief over x0: N(0, I)
         posterior_dist = MultivariateNormal(
-            loc=torch.zeros((args.batch_size, args.x_dim), device=device),
-            covariance_matrix=torch.eye(args.x_dim, device=device).expand(args.batch_size, -1, -1)
+            loc=torch.zeros((config.batch_size, config.x_dim), device=device),
+            covariance_matrix=torch.eye(config.x_dim, device=device).expand(config.batch_size, -1, -1)
         )
         y_pred_loss = 0.0
         y_filter_loss = 0.0
         mean_consistency = 0.0
         kl_consistency = 0.0
 
-        for t in range(1, args.chunk_length - args.prediction_k):
+        for t in range(1, config.chunk_length - config.prediction_k):
             prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
             posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
             consistencies = compute_consistency(prior=prior_dist, posterior=posterior_dist)
@@ -102,25 +100,25 @@ def train_backbone(
             y_filter_loss += nn.MSELoss()(decoder(filter_a), y[t])
 
             # tensors to hold predictions of future ys
-            pred_y = torch.zeros((args.prediction_k, args.batch_size, train_buffer.y_dim), device=device)
+            pred_y = torch.zeros((config.prediction_k, config.batch_size, train_buffer.y_dim), device=device)
 
             pred_dist = posterior_dist
 
-            for k in range(args.prediction_k):
+            for k in range(config.prediction_k):
                 pred_dist = dynamics_model.dynamics_update(dist=pred_dist, u=u[t+k])
                 pred_a = dynamics_model.get_a(pred_dist.loc)
                 pred_y[k] = decoder(pred_a)
 
-            true_y = y[t+1: t+1+args.prediction_k]
+            true_y = y[t+1: t+1+config.prediction_k]
             true_y_flatten = einops.rearrange(true_y, "k b y -> (k b) y")
             pred_y_flatten = einops.rearrange(pred_y, "k b y -> (k b) y")
             y_pred_loss += nn.MSELoss()(pred_y_flatten, true_y_flatten)
 
         # y prediction loss
-        y_pred_loss /= (args.chunk_length - args.prediction_k - 1)
+        y_pred_loss /= (config.chunk_length - config.prediction_k - 1)
 
         # y filter loss
-        y_filter_loss /= (args.chunk_length - args.prediction_k - 1)
+        y_filter_loss /= (config.chunk_length - config.prediction_k - 1)
 
         # autoencoder loss
         a_flatten = einops.rearrange(a, "l b a -> (l b) a")
@@ -129,25 +127,20 @@ def train_backbone(
         ae_loss = nn.MSELoss()(y_recon, y_flatten)
 
         # consistency loss
-        mean_consistency /= (args.chunk_length - args.prediction_k - 1)
-        kl_consistency /= (args.chunk_length - args.prediction_k - 1)
+        mean_consistency /= (config.chunk_length - config.prediction_k - 1)
+        kl_consistency /= (config.chunk_length - config.prediction_k - 1)
 
         total_loss = (
             y_pred_loss +
-            args.filtering_weight * y_filter_loss +
-            args.mean_consistency_weight * mean_consistency +
-            args.kl_consistency_weight * kl_consistency
+            config.filtering_weight * y_filter_loss +
+            config.mean_consistency_weight * mean_consistency +
+            config.kl_consistency_weight * kl_consistency
         )
 
         optimizer.zero_grad()
         total_loss.backward()
 
-        # freeze decoder parameters with some probability
-        if torch.rand(()) < args.decoder_freeze_prob:
-            for p in decoder.parameters():
-                p.grad = None
-
-        clip_grad_norm_(all_params, args.clip_grad_norm)
+        clip_grad_norm_(all_params, config.clip_grad_norm)
         optimizer.step()
         scheduler.step()
 
@@ -161,7 +154,7 @@ def train_backbone(
             "global_step": update,
         })
             
-        if update % args.test_interval == 0:
+        if update % config.test_interval == 0:
             # test
             with torch.no_grad():
                 encoder.eval()
@@ -169,29 +162,29 @@ def train_backbone(
                 dynamics_model.eval()
 
                 y, u, _, _ = test_buffer.sample(
-                    batch_size=args.batch_size,
-                    chunk_length=args.chunk_length,
+                    batch_size=config.batch_size,
+                    chunk_length=config.chunk_length,
                 )
 
                 # convert to tensor, transform to device, reshape to time-first
                 y = torch.as_tensor(y, device=device)
                 y = einops.rearrange(y, "b l y -> l b y")
                 a = encoder(einops.rearrange(y, "l b y -> (l b) y"))
-                a = einops.rearrange(a, "(l b) a -> l b a", b=args.batch_size)
+                a = einops.rearrange(a, "(l b) a -> l b a", b=config.batch_size)
                 u = torch.as_tensor(u, device=device)
                 u = einops.rearrange(u, "b l u -> l b u")
 
                 # initial belief over x0: N(0, I)
                 posterior_dist = MultivariateNormal(
-                    loc=torch.zeros((args.batch_size, args.x_dim), device=device),
-                    covariance_matrix=torch.eye(args.x_dim, device=device).expand(args.batch_size, -1, -1)
+                    loc=torch.zeros((config.batch_size, config.x_dim), device=device),
+                    covariance_matrix=torch.eye(config.x_dim, device=device).expand(config.batch_size, -1, -1)
                 )
                 y_pred_loss = 0.0
                 y_filter_loss = 0.0
                 mean_consistency = 0.0
                 kl_consistency = 0.0
 
-                for t in range(1, args.chunk_length - args.prediction_k):
+                for t in range(1, config.chunk_length - config.prediction_k):
                     prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
                     posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
                     consistencies = compute_consistency(prior=prior_dist, posterior=posterior_dist)
@@ -202,25 +195,25 @@ def train_backbone(
                     y_filter_loss += nn.MSELoss()(decoder(filter_a), y[t])
 
                     # tensors to hold predictions of future ys
-                    pred_y = torch.zeros((args.prediction_k, args.batch_size, train_buffer.y_dim), device=device)
+                    pred_y = torch.zeros((config.prediction_k, config.batch_size, train_buffer.y_dim), device=device)
 
                     pred_dist = posterior_dist
 
-                    for k in range(args.prediction_k):
+                    for k in range(config.prediction_k):
                         pred_dist = dynamics_model.dynamics_update(dist=pred_dist, u=u[t+k])
                         pred_a = dynamics_model.get_a(pred_dist.loc)
                         pred_y[k] = decoder(pred_a)
 
-                    true_y = y[t+1: t+1+args.prediction_k]
+                    true_y = y[t+1: t+1+config.prediction_k]
                     true_y_flatten = einops.rearrange(true_y, "k b y -> (k b) y")
                     pred_y_flatten = einops.rearrange(pred_y, "k b y -> (k b) y")
                     y_pred_loss += nn.MSELoss()(pred_y_flatten, true_y_flatten)
 
                 # y prediction loss
-                y_pred_loss /= (args.chunk_length - args.prediction_k - 1)
+                y_pred_loss /= (config.chunk_length - config.prediction_k - 1)
 
                 # y filter loss
-                y_filter_loss /= (args.chunk_length - args.prediction_k - 1)
+                y_filter_loss /= (config.chunk_length - config.prediction_k - 1)
 
                 # autoencoder loss
                 a_flatten = einops.rearrange(a, "l b a -> (l b) a")
@@ -229,14 +222,14 @@ def train_backbone(
                 ae_loss = nn.MSELoss()(y_recon, y_flatten)
 
                 # consistency loss
-                mean_consistency /= (args.chunk_length - args.prediction_k - 1)
-                kl_consistency /= (args.chunk_length - args.prediction_k - 1)
+                mean_consistency /= (config.chunk_length - config.prediction_k - 1)
+                kl_consistency /= (config.chunk_length - config.prediction_k - 1)
 
                 total_loss = (
                     y_pred_loss +
-                    args.filtering_weight * y_filter_loss +
-                    args.mean_consistency_weight * mean_consistency +
-                    args.kl_consistency_weight * kl_consistency
+                    config.filtering_weight * y_filter_loss +
+                    config.mean_consistency_weight * mean_consistency +
+                    config.kl_consistency_weight * kl_consistency
                 )
                 
                 wandb.log({
@@ -249,26 +242,20 @@ def train_backbone(
                     "global_step": update,
                 })
                 
-
-    save_dir = Path(args.log_dir) / args.run_id
-    torch.save(encoder.state_dict(), save_dir / "encoder.pth")
-    torch.save(decoder.state_dict(), save_dir / "decoder.pth")
-    torch.save(dynamics_model.state_dict(), save_dir / "dynamics_model.pth")
-
     return encoder, decoder, dynamics_model
 
 
 def train_cost(
-    args: Namespace,
+    config: DictConfig,
     encoder: Encoder,
     dynamics_model: Dynamics,
     train_buffer: ReplayBuffer,
     test_buffer: ReplayBuffer,
 ):
-    device = "cuda" if (torch.cuda.is_available() and not args.disable_gpu) else "cpu"
+    device = "cuda" if (torch.cuda.is_available() and not config.disable_gpu) else "cpu"
 
     cost_model = CostModel(
-        x_dim=args.x_dim,
+        x_dim=config.x_dim,
         u_dim=train_buffer.u_dim,
     ).to(device)
 
@@ -285,28 +272,27 @@ def train_cost(
     wandb.watch([cost_model], log="all", log_freq=10)
 
     all_params = list(cost_model.parameters())
-    optimizer = torch.optim.Adam(all_params, lr=args.lr, eps=args.eps, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(all_params, lr=config.lr, eps=config.eps, weight_decay=config.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer=optimizer,
-        T_max=args.num_updates
+        T_max=config.num_updates
     )
 
     # train and test loop
-    print(f"training on {device} ...")
-    for update in tqdm(range(args.num_updates)):    
+    for update in tqdm(range(config.num_updates)):    
         # train
         cost_model.train()
 
         y, u, c, _ = train_buffer.sample(
-            batch_size=args.batch_size,
-            chunk_length=args.chunk_length,
+            batch_size=config.batch_size,
+            chunk_length=config.chunk_length,
         )
 
         # convert to tensor, transform to device, reshape to time-first
         y = torch.as_tensor(y, device=device)
         y = einops.rearrange(y, "b l y -> l b y")
         a = encoder(einops.rearrange(y, "l b y -> (l b) y"))
-        a = einops.rearrange(a, "(l b) a -> l b a", b=args.batch_size)
+        a = einops.rearrange(a, "(l b) a -> l b a", b=config.batch_size)
         u = torch.as_tensor(u, device=device)
         u = einops.rearrange(u, "b l u -> l b u")
         c = torch.as_tensor(c, device=device)
@@ -314,22 +300,22 @@ def train_cost(
 
         # initial belief over x0: N(0, I)
         posterior_dist = MultivariateNormal(
-            loc=torch.zeros((args.batch_size, args.x_dim), device=device),
-            covariance_matrix=torch.eye(args.x_dim, device=device).expand(args.batch_size, -1, -1)
+            loc=torch.zeros((config.batch_size, config.x_dim), device=device),
+            covariance_matrix=torch.eye(config.x_dim, device=device).expand(config.batch_size, -1, -1)
         )
         cost_loss = 0.0
 
-        for t in range(1, args.chunk_length):
+        for t in range(1, config.chunk_length):
             prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
             posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
             cost_loss += nn.MSELoss()(cost_model(x=posterior_dist.loc, u=u[t]), c[t])
 
-        cost_loss /= (args.chunk_length - 1)
+        cost_loss /= (config.chunk_length - 1)
 
         optimizer.zero_grad()
         cost_loss.backward()
 
-        clip_grad_norm_(all_params, args.clip_grad_norm)
+        clip_grad_norm_(all_params, config.clip_grad_norm)
         optimizer.step()
         scheduler.step()
 
@@ -338,21 +324,21 @@ def train_cost(
             "global_step": update,
         })
             
-        if update % args.test_interval == 0:
+        if update % config.test_interval == 0:
             # test
             with torch.no_grad():
                 cost_model.eval()
 
                 y, u, c, _ = test_buffer.sample(
-                    batch_size=args.batch_size,
-                    chunk_length=args.chunk_length,
+                    batch_size=config.batch_size,
+                    chunk_length=config.chunk_length,
                 )
 
                 # convert to tensor, transform to device, reshape to time-first
                 y = torch.as_tensor(y, device=device)
                 y = einops.rearrange(y, "b l y -> l b y")
                 a = encoder(einops.rearrange(y, "l b y -> (l b) y"))
-                a = einops.rearrange(a, "(l b) a -> l b a", b=args.batch_size)
+                a = einops.rearrange(a, "(l b) a -> l b a", b=config.batch_size)
                 u = torch.as_tensor(u, device=device)
                 u = einops.rearrange(u, "b l u -> l b u")
                 c = torch.as_tensor(c, device=device)
@@ -360,31 +346,20 @@ def train_cost(
 
                 # initial belief over x0: N(0, I)
                 posterior_dist = MultivariateNormal(
-                    loc=torch.zeros((args.batch_size, args.x_dim), device=device),
-                    covariance_matrix=torch.eye(args.x_dim, device=device).expand(args.batch_size, -1, -1)
+                    loc=torch.zeros((config.batch_size, config.x_dim), device=device),
+                    covariance_matrix=torch.eye(config.x_dim, device=device).expand(config.batch_size, -1, -1)
                 )
                 cost_loss = 0.0
 
-                for t in range(1, args.chunk_length):
+                for t in range(1, config.chunk_length):
                     prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
                     posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
                     cost_loss += nn.MSELoss()(cost_model(x=posterior_dist.loc, u=u[t]), c[t])
 
-                cost_loss /= (args.chunk_length - 1)
-
-                optimizer.zero_grad()
-                cost_loss.backward()
-
-                clip_grad_norm_(all_params, args.clip_grad_norm)
-                optimizer.step()
-                scheduler.step()
-
+                cost_loss /= (config.chunk_length - 1)
                 wandb.log({
                     "test/cost loss": cost_loss.item(),
                     "global_step": update,
                 })
-
-    save_dir = Path(args.log_dir) / args.run_id
-    torch.save(cost_model.state_dict(), save_dir / "cost_model.pth")
 
     return cost_model

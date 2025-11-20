@@ -21,20 +21,20 @@ class Torus(gym.Env):
         self,
         A: np.ndarray,
         B: np.ndarray,
-        Q: np.ndarray,
-        R: np.ndarray,
         Ns: Optional[np.ndarray]=None,
         No: Optional[np.ndarray]=None,
         render_mode: str=None,
         horizon: int= 1000,
     ):
+        
+        super().__init__()
 
         self.A = A
         self.B = B
-        self.Q = Q
-        self.R = R
         self.Ns = Ns
         self.No = No
+
+        self._verify_parameters()
         
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -65,8 +65,6 @@ class Torus(gym.Env):
     def _verify_parameters(self):
         assert self.A.shape == (self.x_dim, self.x_dim)
         assert self.B.shape == (self.x_dim, self.u_dim)
-        assert self.Q.shape == (self.x_dim, self.x_dim)
-        assert self.R.shape == (self.u_dim, self.u_dim)
         if self.Ns is not None:
             assert self.Ns.shape == (self.x_dim, self.x_dim)
         if self.No is not None:
@@ -115,7 +113,7 @@ class Torus(gym.Env):
         else:
             self._target = self.state_space.sample().reshape(1, -1)
 
-        self._step = 1
+        self._step = 0
         observation = self._get_obs().flatten()
         info = {
             "state": self._state.copy().flatten(),
@@ -123,6 +121,44 @@ class Torus(gym.Env):
         }
 
         return observation, info
+    
+
+    def step(
+        self,
+        action: np.ndarray,
+    ):
+        assert action.shape == self.action_space.shape
+        action = action.astype(np.float32).reshape(1, -1)
+        action = np.clip(
+            action, 
+            a_min=self.action_space.low,
+            a_max=self.action_space.high,
+        )
+
+        residual = self._state - self._target
+
+        self._state = self._state @ self.A.T + action @ self.B.T
+        if self.Ns is not None:
+            ns = self.np_random.multivariate_normal(
+                mean=np.zeros(self.state_space.shape),
+                cov=self.Ns,
+            ).astype(np.float32).reshape(1, -1)
+            self._state = self._state + ns
+
+        self._state = (self._state % (self.state_space.high - self.state_space.low)) + self.state_space.low
+
+        self._step += 1
+        info = {
+            "state": self._state.copy().flatten(),
+            "target": self._target.copy().flatten(),
+        }
+        truncated = bool(self._step >= self.horizon)
+        terminated = False
+        reward = 0.0
+        obs = self._get_obs().flatten()
+    
+        return obs, reward, terminated, truncated, info 
+
             
     def render(self):
         if self.render_mode != "rgb_array":
@@ -266,67 +302,3 @@ class Torus(gym.Env):
         plt.close(fig)
         
         return img
-    
-    def save(self, filepath: str):
-        """
-        Save environment parameters (dynamics and noise matrices) to a file.
-        
-        Args:
-            filepath: Path to save the environment parameters
-        """
-        params = {
-            'A': self.A.tolist(),
-            'B': self.B.tolist(),
-            'Q': self.Q.tolist(),
-            'R': self.R.tolist(),
-            'Ns': self.Ns.tolist() if self.Ns is not None else None,
-            'No': self.No.tolist() if self.No is not None else None,
-            'horizon': self.horizon,
-            'radius1': self.radius1,
-            'radius2': self.radius2,
-        }
-        
-        with open(filepath, 'w') as f:
-            json.dump(params, f, indent=2)
-    
-    @classmethod
-    def load(cls, filepath: str, render_mode: str = None):
-        """
-        Load environment parameters from a file and create a new environment.
-        
-        Args:
-            filepath: Path to load the environment parameters from
-            render_mode: Render mode for the environment
-            
-        Returns:
-            Torus environment initialized with loaded parameters
-        """
-        with open(filepath, 'r') as f:
-            params = json.load(f)
-        
-        A = np.array(params['A'])
-        B = np.array(params['B'])
-        Q = np.array(params['Q'])
-        R = np.array(params['R'])
-        Ns = np.array(params['Ns']) if params['Ns'] is not None else None
-        No = np.array(params['No']) if params['No'] is not None else None
-        horizon = params['horizon']
-        
-        env = cls(
-            A=A,
-            B=B,
-            Q=Q,
-            R=R,
-            Ns=Ns,
-            No=No,
-            render_mode=render_mode,
-            horizon=horizon,
-        )
-        
-        # Load radius parameters if they exist (for backward compatibility)
-        if 'radius1' in params:
-            env.radius1 = params['radius1']
-        if 'radius2' in params:
-            env.radius2 = params['radius2']
-        
-        return env

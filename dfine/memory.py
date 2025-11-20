@@ -1,6 +1,4 @@
 import minari
-from typing import Optional
-import gymnasium as gym
 import numpy as np
 from tqdm import tqdm
 
@@ -17,7 +15,6 @@ class ReplayBuffer:
             y_dim=dataset.observation_space.shape[0],
             u_dim=dataset.action_space.shape[0],
         )
-        print("loading the dataset ...")
         for episode in tqdm(dataset):
             steps = episode.actions.shape[0]
             for i in range(steps):
@@ -29,24 +26,6 @@ class ReplayBuffer:
                 )
         return buffer
     
-    @staticmethod
-    def collect_from_env(
-        env: gym.Env,
-        num_episodes: Optional[int]=100,
-    ):
-        total_steps = num_episodes * env.horizon
-        buffer = ReplayBuffer(
-            capacity=total_steps,
-            y_dim=env.observation_space.shape[0],
-            u_dim=env.action_space.shape[0],
-        )
-        print("collecting data ...")
-        # fix target
-        target = env.state_space.sample()
-        for ep in tqdm(range(num_episodes)):
-            obs, info = env.reset()
-            done = False
-
     def __init__(
         self,
         capacity: int,
