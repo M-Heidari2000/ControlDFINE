@@ -51,11 +51,11 @@ def plot_costs(
         aspect="auto",
         cmap="coolwarm"
     )
-    ax_mean.set_title("Mean Cost per Region")
-    ax_mean.set_xlabel("x")
-    ax_mean.set_ylabel("y")
+    ax_mean.set_title("mean cost per region")
+    ax_mean.set_xlabel("x[0]")
+    ax_mean.set_ylabel("x[1]")
     cbar_mean = fig_mean.colorbar(im_mean, ax=ax_mean)
-    cbar_mean.set_label("Mean Cost")
+    cbar_mean.set_label("mean cost")
     fig_mean.tight_layout()
 
     fig_std, ax_std = plt.subplots()
@@ -66,11 +66,11 @@ def plot_costs(
         aspect="auto",
         cmap="coolwarm"
     )
-    ax_std.set_title("Std of Cost per Region")
-    ax_std.set_xlabel("x")
-    ax_std.set_ylabel("y")
+    ax_std.set_title("std of cost per region")
+    ax_std.set_xlabel("x[0]")
+    ax_std.set_ylabel("x[1]")
     cbar_std = fig_std.colorbar(im_std, ax=ax_std)
-    cbar_std.set_label("Std of Cost")
+    cbar_std.set_label("std of cost")
     fig_std.tight_layout()
 
     return fig_mean, fig_std

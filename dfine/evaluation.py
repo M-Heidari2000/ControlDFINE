@@ -17,18 +17,21 @@ def trial(
     # initialize the environment in the middle of the state space
     mid = (env.state_space.low + env.state_space.high) / 2
     obs, _ = env.reset(options={"initial_state": mid})
+    initial_cost = (np.linalg.norm(obs - obs_target) ** 2)
     agent.reset()
     action = env.action_space.sample()
     done = False
     total_cost = 0.0
+    steps = 0
     while not done:
         planned_actions = agent(y=obs, u=action, explore=False)
         action = planned_actions[0].flatten()
         next_obs, _, terminated, truncated, _ = env.step(action=action)
         total_cost += np.linalg.norm(obs - obs_target) ** 2
+        steps += 1
         done = terminated or truncated
         obs = next_obs
-    return total_cost.item()
+    return total_cost.item() / (initial_cost * steps)
 
 
 def evaluate(
