@@ -43,6 +43,7 @@ def plot_costs(
     y_max = ys.max() + dy
     extent = [x_min, x_max, y_min, y_max]
 
+    # ========= Mean heatmap =========
     fig_mean, ax_mean = plt.subplots()
     im_mean = ax_mean.imshow(
         mean_grid,
@@ -56,8 +57,27 @@ def plot_costs(
     ax_mean.set_ylabel("x[1]")
     cbar_mean = fig_mean.colorbar(im_mean, ax=ax_mean)
     cbar_mean.set_label("mean cost")
+
+    # add text annotations for mean
+    for iy in range(ny):
+        for ix in range(nx):
+            val = mean_grid[iy, ix]
+            # center of the cell
+            x_center = xs[ix] + dx / 2.0
+            y_center = ys[iy] + dy / 2.0
+            ax_mean.text(
+                x_center,
+                y_center,
+                f"{val:.2f}",
+                ha="center",
+                va="center",
+                color="black",
+                fontsize=8,
+            )
+
     fig_mean.tight_layout()
 
+    # ========= Std heatmap =========
     fig_std, ax_std = plt.subplots()
     im_std = ax_std.imshow(
         std_grid,
@@ -71,6 +91,23 @@ def plot_costs(
     ax_std.set_ylabel("x[1]")
     cbar_std = fig_std.colorbar(im_std, ax=ax_std)
     cbar_std.set_label("std of cost")
+
+    # add text annotations for std
+    for iy in range(ny):
+        for ix in range(nx):
+            val = std_grid[iy, ix]
+            x_center = xs[ix] + dx / 2.0
+            y_center = ys[iy] + dy / 2.0
+            ax_std.text(
+                x_center,
+                y_center,
+                f"{val:.2f}",
+                ha="center",
+                va="center",
+                color="black",
+                fontsize=8,
+            )
+
     fig_std.tight_layout()
 
     return fig_mean, fig_std
