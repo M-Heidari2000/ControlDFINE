@@ -16,8 +16,7 @@ class IMPCAgent:
         cost_model,
         planning_horizon: int,
         num_iterations: int = 10,
-        action_noise: float = 0.3
-
+        action_noise: float = 0.3,
     ):
         self.encoder = encoder
         self.dynamics_model = dynamics_model
