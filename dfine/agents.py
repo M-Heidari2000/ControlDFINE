@@ -15,11 +15,13 @@ class MPCAgent:
         dynamics_model,
         cost_model,
         planning_horizon: int,
+        action_noise: float=0.3,
     ):
         self.encoder = encoder
         self.dynamics_model = dynamics_model
         self.cost_model = cost_model
         self.planning_horizon = planning_horizon
+        self.action_noise = action_noise
 
         self.device = next(encoder.parameters()).device
 
