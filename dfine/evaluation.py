@@ -1,7 +1,7 @@
 import wandb
 import numpy as np
 import gymnasium as gym
-from .agents import IMPCAgent
+from .agents import MPCAgent
 from omegaconf.dictconfig import DictConfig
 from .models import Dynamics, Encoder
 from .utils import make_grid
@@ -11,7 +11,7 @@ from .train import train_cost
 
 def trial(
     env: gym.Env,
-    agent: IMPCAgent,
+    agent: MPCAgent,
     obs_target: np.ndarray,
 ):
     # initialize the environment in the middle of the state space
@@ -65,7 +65,7 @@ def evaluate(
                 test_buffer=test_buffer,
             )
             # create agent
-            agent = IMPCAgent(
+            agent = MPCAgent(
                 encoder=encoder,
                 dynamics_model=dynamics_model,
                 cost_model=cost_model,

@@ -41,7 +41,6 @@ def train_backbone(
         x_dim=config.x_dim,
         u_dim=train_buffer.u_dim,
         a_dim=config.a_dim,
-        hidden_dim=config.hidden_dim,
     ).to(device)
 
     wandb.watch([encoder, dynamics_model, decoder], log="all", log_freq=10)
