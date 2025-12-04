@@ -61,7 +61,7 @@ class MPCAgent:
             covariance_matrix=torch.eye(self.dynamics_model.x_dim, device=self.device).unsqueeze(0)
         )
 
-    def __call__(self, y, u):
+    def __call__(self, y, u, explore: bool=False):
 
         """
             inputs: y_t, u_{t-1}
@@ -91,6 +91,10 @@ class MPCAgent:
                 self.quadcost,
                 self.lindx
             )
+
+            if explore:
+                planned_actions += self.action_noise * torch.randn_like(planned_actions)
+
         
         return np.clip(planned_u.squeeze(1).cpu().numpy(), a_min=-1.0, a_max=1.0)
     
