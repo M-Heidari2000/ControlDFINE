@@ -13,8 +13,6 @@ from minari import MinariDataset
 from dfine.memory import ReplayBuffer
 from envs.utils import collect_data
 from dfine.train import train_backbone
-from dfine.evaluation import evaluate
-from dfine.visualization import plot_costs
 
 
 if __name__ == "__main__":
@@ -48,6 +46,7 @@ if __name__ == "__main__":
 
     # create env and collect data
     env = envs.make(config=config.env)
+    env.save(path=save_dir / "env")
     logger.info("collecting data ...")
     collect_data(env=env, data_dir=save_dir / "data", num_episodes=config.data.num_episodes)
     
@@ -69,24 +68,5 @@ if __name__ == "__main__":
     torch.save(encoder.state_dict(), save_dir / "encoder.pth")
     torch.save(decoder.state_dict(), save_dir / "decoder.pth")
     torch.save(dynamics_model.state_dict(), save_dir / "dynamics_model.pth")
-
-    # test the model
-    target_regions = evaluate(
-        eval_config=config.evaluation,
-        train_config=config.train.cost,
-        env=env,
-        dynamics_model=dynamics_model,
-        encoder=encoder,
-        train_buffer=train_buffer,
-        test_buffer=test_buffer
-    )
-
-    # visualize and log to wandb
-    fig_mean, fig_std = plot_costs(target_regions=target_regions)
-
-    wandb.log({
-        "cost_mean": wandb.Image(fig_mean),
-        "cost_std": wandb.Image(fig_std)
-    })
 
     wandb.finish()
