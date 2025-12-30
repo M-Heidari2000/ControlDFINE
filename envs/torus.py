@@ -143,7 +143,8 @@ class Torus(gym.Env):
             ).astype(np.float32).reshape(1, -1)
             self._state = self._state + ns
 
-        self._state = (self._state % (self.state_space.high - self.state_space.low)) + self.state_space.low
+        rng = self.state_space.high - self.state_space.low
+        self._state = ((self._state - self.state_space.low) % rng) + self.state_space.low
 
         self._step += 1
         info = {
