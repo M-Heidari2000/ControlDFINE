@@ -46,7 +46,6 @@ if __name__ == "__main__":
 
     # create env and collect data
     env = envs.make(config=config.env)
-    env.save(path=save_dir / "env")
     logger.info("collecting data ...")
     collect_data(env=env, data_dir=save_dir / "data", num_episodes=config.data.num_episodes)
     

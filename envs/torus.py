@@ -300,32 +300,3 @@ class Torus(gym.Env):
         plt.close(fig)
         
         return img
-    
-    def save(self, path: str | Path) -> None:
-        payload = {
-            "A": self.A.astype(np.float32),
-            "B": self.B.astype(np.float32),
-            "horizon": np.array([self.horizon], dtype=np.int64),
-        }
-        if self.Ns is not None:
-            payload["Ns"] = self.Ns.astype(np.float32)
-        if self.No is not None:
-            payload["No"] = self.No.astype(np.float32)
-
-        np.savez_compressed(path, **payload)
-
-    @classmethod
-    def load(cls, path: str | Path):
-        data = np.load(path, allow_pickle=False)
-
-        if "A" not in data.files or "B" not in data.files or "horizon" not in data.files:
-            raise ValueError("Invalid file: expected keys {'A','B','horizon'} (and optional {'Ns','No'}).")
-
-        A = data["A"].astype(np.float32)
-        B = data["B"].astype(np.float32)
-        horizon = int(data["horizon"][0])
-
-        Ns = data["Ns"].astype(np.float32) if "Ns" in data.files else None
-        No = data["No"].astype(np.float32) if "No" in data.files else None
-
-        return cls(A=A, B=B, Ns=Ns, No=No, horizon=horizon)
