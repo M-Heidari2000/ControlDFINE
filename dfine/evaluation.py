@@ -30,8 +30,8 @@ def trial(
     while not done:
         x = torch.as_tensor(info["state"], device=oracle.device).unsqueeze(0)
         planned_actions = oracle(x=x)
-        planned_u = agent(x=x)
-        obs, _, terminated, truncated, info = env.step(planned_u[0].flatten())
+        action = planned_actions[0].flatten()
+        obs, _, terminated, truncated, info = env.step(action=action)
         oracle_cost += np.linalg.norm(obs - obs_target) ** 2
         done = terminated or truncated
 
