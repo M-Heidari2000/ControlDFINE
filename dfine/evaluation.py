@@ -28,7 +28,7 @@ def trial(
     done = False
     oracle_cost = 0.0
     while not done:
-        x = torch.as_tensor(info["state"], device=oracle.Q.device).unsqueeze(0)
+        x = torch.as_tensor(info["state"], device=oracle.device).unsqueeze(0)
         planned_actions = oracle(x=x)
         planned_u = agent(x=x)
         obs, _, terminated, truncated, info = env.step(planned_u[0].flatten())
