@@ -106,7 +106,4 @@ class ReplayBuffer:
         obs_target = obs_target.astype(np.float32).reshape(1, -1)
         new_buffer = copy.deepcopy(self)
         new_buffer.cs = np.linalg.norm(new_buffer.ys - obs_target, axis=1, keepdims=True) ** 2
-        costs_mean = np.mean(new_buffer.cs)
-        costs_std = np.std(new_buffer.cs)
-        new_buffer.cs = (new_buffer.cs - costs_mean) / (costs_std + 1e-6)
         return new_buffer
