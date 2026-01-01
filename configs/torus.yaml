@@ -18,16 +18,16 @@ env:
     - [0.1,0.0]
     - [0.0, 0.1]
   Ns:
-    - [0.01, 0.0]
-    - [0.0, 0.01]
+    - [0.0001, 0.0]
+    - [0.0, 0.0001]
   "No":
-    - [0.01, 0.0, 0.0]
-    - [0.0, 0.01, 0.0]
-    - [0.0, 0.0, 0.01]
+    - [0.0001, 0.0, 0.0]
+    - [0.0, 0.0001, 0.0]
+    - [0.0, 0.0, 0.0001]
 
 train:
   backbone:
-    num_updates: 2500
+    num_updates: 2000
     test_interval: 10
     x_dim: 3
     a_dim: 3
@@ -36,27 +36,27 @@ train:
     chunk_length: 24
     prediction_k: 8
     batch_size: 128
-    lr: 1e-4
+    lr: 1e-3
     eps: 1e-8
     weight_decay: 1e-6
     clip_grad_norm: 1.0
     disable_gpu: False
     filtering_weight: 1.0
-    mean_consistency_weight: 0.0
+    mean_consistency_weight: 0.05
     kl_consistency_weight: 0.0
   cost:
-    num_updates: 3000
+    num_updates: 2500
     test_interval: 10
     chunk_length: 24
     batch_size: 256
-    lr: 5e-4
+    lr: 1e-3
     eps: 1e-8
     weight_decay: 1e-6
     clip_grad_norm: 1.0
     disable_gpu: False
-    input_penalty: 1.0
+    input_penalty: 1e-6
 
 evaluation:
-  num_points: 10
-  num_regions: 4
-  planning_horizon: 10
+  num_points: 1
+  num_regions: 2
+  planning_horizon: 8
