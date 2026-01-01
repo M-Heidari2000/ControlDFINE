@@ -161,16 +161,16 @@ class OracleMPC:
 
         x_dim = Q.shape[0]
         u_dim = R.shape[0]
-        device = A.device
+        self.device = A.device
 
         C = torch.block_diag(Q, R).repeat(planning_horizon, 1, 1, 1)
         c = torch.cat([
             q,
-            torch.zeros((1, u_dim), device=device)
+            torch.zeros((1, u_dim), device=self.device)
         ], dim=1).repeat(planning_horizon, 1, 1)
         
         F = torch.cat((A, B), dim=1).repeat(planning_horizon, 1, 1, 1)
-        f = torch.zeros((1, x_dim), device=device).repeat(planning_horizon, 1, 1)
+        f = torch.zeros((1, x_dim), device=self.device).repeat(planning_horizon, 1, 1)
         
         self.quadcost = QuadCost(C, c)
         self.lindx = LinDx(F, f)
