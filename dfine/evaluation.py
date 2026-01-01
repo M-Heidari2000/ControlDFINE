@@ -1,7 +1,7 @@
-import wandb
+import torch
 import numpy as np
 import gymnasium as gym
-from .agents import IMPCAgent
+from .agents import IMPCAgent, OracleMPC
 from omegaconf.dictconfig import DictConfig
 from .models import Dynamics, Encoder
 from .utils import make_grid
@@ -12,31 +12,48 @@ from .train import train_cost
 def trial(
     env: gym.Env,
     agent: IMPCAgent,
-    obs_target: np.ndarray,
+    oracle: OracleMPC,
+    target: np.ndarray,
 ):
     # initialize the environment in the middle of the state space
-    mid = (env.state_space.low + env.state_space.high) / 2
-    obs, _ = env.reset(options={"initial_state": mid})
-    initial_cost = (np.linalg.norm(obs - obs_target) ** 2)
+    initial_state = (env.state_space.low + env.state_space.high) / 2
+    obs_target = env.manifold(target.reshape(1, -1)).flatten()
+    options={
+        "initial_state": initial_state,
+        "target_state": target,
+    }
+
+    # control with oracle
+    obs, info = env.reset(options=options)
+    done = False
+    oracle_cost = 0.0
+    while not done:
+        x = torch.as_tensor(info["state"], device=oracle.Q.device).unsqueeze(0)
+        planned_actions = oracle(x=x)
+        planned_u = agent(x=x)
+        obs, _, terminated, truncated, info = env.step(planned_u[0].flatten())
+        oracle_cost += np.linalg.norm(obs - obs_target) ** 2
+        done = terminated or truncated
+
+    # control with the learned model
+    obs, _ = env.reset(options=options)
     agent.reset()
     action = env.action_space.sample()
     done = False
     total_cost = 0.0
-    steps = 0
     while not done:
         planned_actions = agent(y=obs, u=action, explore=False)
         action = planned_actions[0].flatten()
-        next_obs, _, terminated, truncated, _ = env.step(action=action)
+        obs, _, terminated, truncated, _ = env.step(action=action)
         total_cost += np.linalg.norm(obs - obs_target) ** 2
-        steps += 1
         done = terminated or truncated
-        obs = next_obs
-    return total_cost.item() / (initial_cost * steps)
+
+    return total_cost.item() / oracle_cost.item()
 
 
 def evaluate(
     eval_config: DictConfig,
-    train_config: DictConfig,
+    cost_train_config: DictConfig,
     env: gym.Env,
     dynamics_model: Dynamics,
     encoder: Encoder,
@@ -58,7 +75,7 @@ def evaluate(
             train_buffer = train_buffer.map_costs(obs_target=obs_target)
             test_buffer = test_buffer.map_costs(obs_target=obs_target)
             cost_model = train_cost(
-                config=train_config,
+                config=cost_train_config,
                 encoder=encoder,
                 dynamics_model=dynamics_model,
                 train_buffer=train_buffer,
@@ -71,8 +88,20 @@ def evaluate(
                 cost_model=cost_model,
                 planning_horizon=eval_config.planning_horizon,
             )
-            trial_cost = trial(env=env, agent=agent, obs_target=obs_target)
+
+            # create oracle
+            device = next(cost_model.parameters()).device
+            Q = torch.eye(cost_model.x_dim, device=device)
+            R = cost_model.R
+            q = -torch.as_tensor(sample, device=device).reshape(1, -1) @ Q
+            A=torch.as_tensor(env.A, device=device)
+            B=torch.as_tensor(env.B, device=device)
+            oracle = OracleMPC(Q=Q, R=R, q=q, A=A, B=B)
+
+            # get a trial
+            trial_cost = trial(env=env, agent=agent, oracle=oracle, target=sample)
             costs.append(trial_cost)
+        
         region["costs"] = np.array(costs)
 
     return target_regions

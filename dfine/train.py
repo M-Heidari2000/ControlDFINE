@@ -257,6 +257,7 @@ def train_cost(
     cost_model = CostModel(
         x_dim=dynamics_model.x_dim,
         u_dim=train_buffer.u_dim,
+        input_penalty=config.input_penalty,
     ).to(device)
 
     # freeze backbone models

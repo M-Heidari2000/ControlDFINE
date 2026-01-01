@@ -86,6 +86,7 @@ class CostModel(nn.Module):
         self,
         x_dim: int,
         u_dim: int,
+        input_penalty: Optional[float]=1.0,
     ):
         
         super().__init__()
@@ -94,20 +95,12 @@ class CostModel(nn.Module):
         self.u_dim = u_dim
         
         self.A = nn.Parameter(torch.eye(x_dim, dtype=torch.float32))
-        self.B = nn.Parameter(torch.eye(u_dim, dtype=torch.float32))
         self.q = nn.Parameter(torch.randn((x_dim, ), dtype=torch.float32))
+        self.register_buffer("R", input_penalty * torch.eye(u_dim, dtype=torch.float32()))
 
     @property
     def Q(self):
         return self.A @ self.A.T
-    
-    @property
-    def R(self):
-        L = torch.tril(self.B)
-        diagonals = nn.functional.softplus(L.diagonal()) + 1e-4
-        X = 1 - torch.eye(self.u_dim, device=self.B.device, dtype=torch.float32)
-        L = L * X + diagonals.diag()
-        return L @ L.T
     
     def forward(self, x: torch.Tensor, u: torch.Tensor):
         # x: b x

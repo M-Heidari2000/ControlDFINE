@@ -54,6 +54,7 @@ train:
     weight_decay: 1e-6
     clip_grad_norm: 1.0
     disable_gpu: False
+    input_penalty: 1.0
 
 evaluation:
   num_points: 10
