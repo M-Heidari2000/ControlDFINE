@@ -96,7 +96,7 @@ class CostModel(nn.Module):
         
         self.A = nn.Parameter(torch.eye(x_dim, dtype=torch.float32))
         self.q = nn.Parameter(torch.randn((x_dim, ), dtype=torch.float32))
-        self.register_buffer("R", input_penalty * torch.eye(u_dim, dtype=torch.float32()))
+        self.register_buffer("R", input_penalty * torch.eye(u_dim, dtype=torch.float32))
 
     @property
     def Q(self):
