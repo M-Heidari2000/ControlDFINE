@@ -91,7 +91,7 @@ def evaluate(
 
             # create oracle
             device = next(cost_model.parameters()).device
-            Q = torch.eye(cost_model.x_dim, device=device)
+            Q = torch.eye(env.state_space.shape[0], device=device)
             R = cost_model.R
             q = -torch.as_tensor(sample, device=device).reshape(1, -1) @ Q
             A=torch.as_tensor(env.A, device=device)
