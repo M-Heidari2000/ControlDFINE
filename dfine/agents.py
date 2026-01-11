@@ -69,17 +69,24 @@ class IMPCAgent:
                 state = self.dist.loc
                 As = []
                 Bs = []
+                Qs = []
+                qs = []
                 # rollout a trajectory with current policy
                 for t in range(self.planning_horizon):
                     A, B, _, _, _ = self.dynamics_model.get_dynamics(state)
-                    A, B = A.squeeze(0), B.squeeze(0)
+                    Q, q = self.cost_model.get_cost_matrices(state)
+                    A, B, Q, q = A.squeeze(0), B.squeeze(0), Q.squeeze(0), q.squeeze(0)
                     state = state @ A.T + planned_actions[t] @ B.T
                     As.append(A)
                     Bs.append(B)
+                    Qs.append(Q)
+                    qs.append(q)
                 # compute a new policy
                 planned_actions, planned_states = self._plan(
                     As=As,
                     Bs=Bs,
+                    Qs=Qs,
+                    qs=qs,
                 )
 
             if explore:
@@ -90,24 +97,28 @@ class IMPCAgent:
 
         return np.clip(planned_actions.cpu().numpy(), a_min=-1.0, a_max=1.0)
     
-    def _plan(self, As, Bs):
+    def _plan(self, As, Bs, Qs, qs):
         x_dim, u_dim = Bs[0].shape
-        C = torch.block_diag(self.cost_model.Q, self.cost_model.R).repeat(
-            self.planning_horizon, 1, 1, 1,
-        )
-        c = torch.cat([
-            self.cost_model.q.reshape(1, -1),
-            torch.zeros((1, u_dim), device=self.device)
-        ], dim=1).repeat(self.planning_horizon, 1, 1)
         F_list = []
         for A, B in zip(As, Bs):
             Ft = torch.cat((A, B), dim=1)
             Ft = Ft.unsqueeze(0)
             F_list.append(Ft)
         F = torch.stack(F_list, dim=0)
-        f = torch.zeros((1, x_dim), device=self.device).repeat(
-            self.planning_horizon, 1, 1
-        )
+        f = torch.zeros((self.planning_horizon, 1, x_dim), device=self.device)
+
+        C = torch.stack([
+            torch.block_diag(Q, self.cost_model.R).unsqueeze(0) for Q in Qs
+        ], dim=0)
+
+        c_list = []
+        for Q, q in zip(Qs, qs):
+            ct = torch.cat([
+                -q.reshape(1, -1) @ Q.T, torch.zeros((1, u_dim), device=self.device)
+            ], dim=1)
+            c_list.append(ct)
+        c = torch.stack(c_list, dim=0)
+            
         self.quadcost = QuadCost(C, c)
         self.lindx = LinDx(F, f)
 
@@ -118,7 +129,7 @@ class IMPCAgent:
             T=self.planning_horizon,
             u_lower=-1.0,
             u_upper=1.0,
-            lqr_iter=10,
+            lqr_iter=50,
             backprop=False,
             exit_unconverged=False,
         )

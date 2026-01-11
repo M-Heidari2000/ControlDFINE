@@ -86,6 +86,7 @@ class CostModel(nn.Module):
         self,
         x_dim: int,
         u_dim: int,
+        hidden_dim: Optional[int]=64,
         input_penalty: Optional[float]=1.0,
     ):
         
@@ -94,21 +95,35 @@ class CostModel(nn.Module):
         self.x_dim = x_dim
         self.u_dim = u_dim
         
-        self.A = nn.Parameter(torch.eye(x_dim, dtype=torch.float32))
-        self.q = nn.Parameter(torch.randn((x_dim, ), dtype=torch.float32))
+        self.backbone = nn.Sequential(
+            nn.Linear(self.x_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+        )
+
+        self.L_head = nn.Linear(hidden_dim, x_dim * x_dim)
+        self.q_head = nn.Linear(hidden_dim, x_dim)
+
         self.register_buffer("R", input_penalty * torch.eye(u_dim, dtype=torch.float32))
 
-    @property
-    def Q(self):
-        return self.A @ self.A.T
+    def get_cost_matrices(self, x: torch.Tensor):
+        h = self.backbone(x)
+        L = self.L_head(h).reshape(-1, self.x_dim, self.x_dim)
+        Q = L @ L.transpose(-2, -1)
+        Q = 0.5 * (Q + Q.transpose(-2, -1))
+        q = self.q_head(h)
+
+        return Q, q
     
     def forward(self, x: torch.Tensor, u: torch.Tensor):
         # x: b x
         # u: b u
-        xQx = torch.einsum('bi,ij,bj->b', x, self.Q, x)
+        Q, q = self.get_cost_matrices(x=x)
+        dx = x - q
+        xQx = torch.einsum('bi,bij,bj->b', dx, Q, dx)
         uRu = torch.einsum('bi,ij,bj->b', u, self.R, u)
-        xq = torch.einsum('bi,i->b', x, self.q)
-        cost = 0.5 * (xQx + uRu) + xq
+        cost = 0.5 * (xQx + uRu)
         cost = cost.unsqueeze(1)
         return cost
         
