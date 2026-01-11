@@ -82,8 +82,9 @@ if __name__ == "__main__":
         test_buffer=test_buffer
     )
 
+    eval_results = [jsonify(er) for er in eval_results]
     with open(save_dir / "eval_results.json", "w") as f:
-        json.dump(jsonify(eval_results), f, indent=2)
+        json.dump(eval_results, f, indent=2)
     wandb.save(save_dir / "eval_results.json")
     
     wandb.finish()
