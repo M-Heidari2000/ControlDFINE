@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from typing import Union, List, Dict
+from typing import Union, List, Dict, Any
 from torch.distributions import kl_divergence
 from torch.distributions import MultivariateNormal
 
@@ -85,3 +85,21 @@ def make_grid(
         )
 
     return regions
+
+
+def jsonify(d: Dict[str, Any]) -> Dict[str, Any]:
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, np.ndarray):
+            out[k] = v.tolist()
+        elif isinstance(v, np.generic):
+            out[k] = v.item()
+        elif isinstance(v, dict):
+            out[k] = jsonify(v)
+        elif isinstance(v, list):
+            out[k] = [
+                x.tolist() if isinstance(x, np.ndarray) else x for x in v
+            ]
+        else:
+            out[k] = v
+    return out

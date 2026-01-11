@@ -15,6 +15,7 @@ from dfine.memory import ReplayBuffer
 from envs.utils import collect_data
 from dfine.train import train_backbone
 from dfine.evaluation import evaluate
+from dfine.utils import jsonify
 
 
 if __name__ == "__main__":
@@ -82,7 +83,7 @@ if __name__ == "__main__":
     )
 
     with open(save_dir / "eval_results.json", "w") as f:
-        json.dump(eval_results, f, indent=2)
+        json.dump(jsonify(eval_results), f, indent=2)
     wandb.save(save_dir / "eval_results.json")
     
     wandb.finish()
