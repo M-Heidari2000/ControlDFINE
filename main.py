@@ -14,7 +14,6 @@ from dfine.memory import ReplayBuffer
 from envs.utils import collect_data
 from dfine.train import train_backbone
 from dfine.evaluation import evaluate
-from dfine.visualization import plot_costs
 
 
 if __name__ == "__main__":
@@ -71,7 +70,7 @@ if __name__ == "__main__":
     torch.save(dynamics_model.state_dict(), save_dir / "dynamics_model.pth")
 
     # test the model
-    target_regions = evaluate(
+    eval_results = evaluate(
         eval_config=config.evaluation,
         cost_train_config=config.train.cost,
         env=env,
@@ -81,12 +80,6 @@ if __name__ == "__main__":
         test_buffer=test_buffer
     )
 
-    # visualize and log to wandb
-    fig_mean, fig_std = plot_costs(target_regions=target_regions)
-
-    wandb.log({
-        "cost_mean": wandb.Image(fig_mean),
-        "cost_std": wandb.Image(fig_std)
-    })
-
+    wandb.log({"eval_results": eval_results})
+    
     wandb.finish()
