@@ -1,5 +1,6 @@
 import os
 import envs
+import json
 import wandb
 import torch
 import minari
@@ -80,6 +81,8 @@ if __name__ == "__main__":
         test_buffer=test_buffer
     )
 
-    wandb.log({"eval_results": eval_results})
+    with open(save_dir / "eval_results.json", "w") as f:
+        json.dump(eval_results, f, indent=2)
+    wandb.save(save_dir / "eval_results.json")
     
     wandb.finish()
