@@ -114,7 +114,7 @@ class IMPCAgent:
         c_list = []
         for Q, q in zip(Qs, qs):
             ct = torch.cat([
-                -q.reshape(1, -1) @ Q.T, torch.zeros((1, u_dim), device=self.device)
+                -q.reshape(1, -1) @ Q, torch.zeros((1, u_dim), device=self.device)
             ], dim=1)
             c_list.append(ct)
         c = torch.stack(c_list, dim=0)
