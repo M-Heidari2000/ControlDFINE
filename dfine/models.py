@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Optional
 import torch.nn.init as init
+from einops import rearrange
 from torch.distributions import MultivariateNormal
 
 
@@ -116,10 +118,51 @@ class CostModel(nn.Module):
 
         return Q, q
     
-    def forward(self, x: torch.Tensor, u: torch.Tensor):
+
+    def compute_window_cost(self, x: torch.Tensor, u: torch.Tensor, c: torch.Tensor, radius: int = 1):
+        """
+        x: (T, B, x_dim)
+        u: (T, B, u_dim)
+        c: (T, B) | (T, B, 1)
+        """
+        T, B, x_dim = x.shape
+        W = 2 * radius + 1
+
+        if c.ndim == 3:
+            c = c.squeeze(-1)
+
+        if T <= 2 * radius:
+            return torch.zeros((), device=x.device)
+
+        loss = torch.zeros((), device=x.device)
+        count = 0
+
+        for t in range(radius, T - radius):
+            x_win = x[t-radius: t+radius+1]
+            u_win = u[t-radius: t+radius+1]
+            c_win = c[t-radius: t+radius+1]
+
+            # compute (Q,q) from center x[t]
+            Q, q = self.get_cost_matrices(x[t])
+
+            # repeat across window
+            Qw = Q.unsqueeze(0).expand(W, -1, -1, -1)
+            qw = q.unsqueeze(0).expand(W, -1, -1)
+
+            dx = x_win - qw
+            x_term = torch.einsum("wbi,wbij,wbj->wb", dx, Qw, dx)
+            u_term = torch.einsum("wbi,ij,wbj->wb", u_win, self.R, u_win)
+            pred = 0.5 * (x_term + u_term)
+            loss = loss + F.mse_loss(pred, c_win)
+            count += 1
+
+        return loss / max(count, 1)
+
+    def forward(self, x: torch.Tensor, u: torch.Tensor, Q: Optional[torch.Tensor]=None, q: Optional[torch.Tensor]=None):
         # x: b x
         # u: b u
-        Q, q = self.get_cost_matrices(x=x)
+        if Q is None or q is None:
+            Q, q = self.get_cost_matrices(x=x)
         dx = x - q
         xQx = torch.einsum('bi,bij,bj->b', dx, Q, dx)
         uRu = torch.einsum('bi,ij,bj->b', u, self.R, u)

@@ -304,14 +304,14 @@ def train_cost(
             loc=torch.zeros((config.batch_size, dynamics_model.x_dim), device=device),
             covariance_matrix=torch.eye(dynamics_model.x_dim, device=device).expand(config.batch_size, -1, -1)
         )
-        cost_loss = 0.0
+        x_means = torch.zeros((config.chunk_length, config.batch_size, dynamics_model.x_dim), device=device)
 
         for t in range(1, config.chunk_length):
             prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
             posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
-            cost_loss += nn.MSELoss()(cost_model(x=posterior_dist.loc, u=u[t]), c[t])
+            x_means[t] = posterior_dist.loc
 
-        cost_loss /= (config.chunk_length - 1)
+        cost_loss = cost_model.compute_window_cost(x=x_means, u=u, c=c, radius=config.cost_radius)
 
         optimizer.zero_grad()
         cost_loss.backward()
@@ -350,14 +350,15 @@ def train_cost(
                     loc=torch.zeros((config.batch_size, dynamics_model.x_dim), device=device),
                     covariance_matrix=torch.eye(dynamics_model.x_dim, device=device).expand(config.batch_size, -1, -1)
                 )
-                cost_loss = 0.0
+                x_means = torch.zeros((config.chunk_length, config.batch_size, dynamics_model.x_dim), device=device)
 
                 for t in range(1, config.chunk_length):
                     prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
                     posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
-                    cost_loss += nn.MSELoss()(cost_model(x=posterior_dist.loc, u=u[t]), c[t])
+                    x_means[t] = posterior_dist.loc
 
-                cost_loss /= (config.chunk_length - 1)
+                cost_loss = cost_model.compute_window_cost(x=x_means, u=u, c=c, radius=config.cost_radius)                
+
                 wandb.log({
                     "test/cost loss": cost_loss.item(),
                     "global_step": update,
