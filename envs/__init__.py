@@ -15,6 +15,7 @@ def make(config: DictConfig):
                 No=np.array(config.No),
                 horizon=config.horizon,
                 render_mode="rgb_array",
+                periodic=config.periodic,
             )
         case "cos":
             env = Cos(
