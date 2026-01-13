@@ -25,6 +25,7 @@ class Torus(gym.Env):
         No: Optional[np.ndarray]=None,
         render_mode: str=None,
         horizon: int= 1000,
+        periodic: Optional[bool]=True,
     ):
         
         super().__init__()
@@ -40,6 +41,7 @@ class Torus(gym.Env):
         self.render_mode = render_mode
 
         self.horizon = horizon
+        self.periodic = periodic
 
         self.state_space = spaces.Box(
             low=np.array([-np.pi, -np.pi]),
@@ -143,19 +145,29 @@ class Torus(gym.Env):
             ).astype(np.float32).reshape(1, -1)
             self._state = self._state + ns
 
-        rng = self.state_space.high - self.state_space.low
-        self._state = ((self._state - self.state_space.low) % rng) + self.state_space.low
-
         self._step += 1
-        info = {
-            "state": self._state.copy().flatten(),
-            "target": self._target.copy().flatten(),
-        }
         truncated = bool(self._step >= self.horizon)
         terminated = False
         reward = 0.0
         obs = self._get_obs().flatten()
     
+        if self.periodic:
+            rng = self.state_space.high - self.state_space.low
+            self._state = ((self._state - self.state_space.low) % rng) + self.state_space.low
+
+        else:
+            # Check if the state is valid
+            is_valid = (
+                np.all(self.state_space.low < self._state.flatten()) and np.all(self._state.flatten() < self.state_space.high)
+            )
+            if not is_valid:
+                terminated = True
+
+        info = {
+            "state": self._state.copy().flatten(),
+            "target": self._target.copy().flatten(),
+        }
+
         return obs, reward, terminated, truncated, info 
 
             

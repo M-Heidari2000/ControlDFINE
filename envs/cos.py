@@ -140,7 +140,6 @@ class Cos(gym.Env):
             ).astype(np.float32).reshape(1, -1)
             self._state = self._state + ns
 
-        
         self._step += 1
         truncated = bool(self._step >= self.horizon)
         terminated = False

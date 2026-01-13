@@ -119,7 +119,7 @@ class CostModel(nn.Module):
         return Q, q
     
 
-    def compute_window_cost(self, x: torch.Tensor, u: torch.Tensor, c: torch.Tensor, radius: int = 1):
+    def compute_window_cost(self, x:torch.Tensor, u:torch.Tensor, c:torch.Tensor, radius:int = 1):
         """
         x: (T, B, x_dim)
         u: (T, B, u_dim)
