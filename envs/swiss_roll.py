@@ -75,7 +75,7 @@ class SwissRoll(gym.Env):
         x = s[:, 0] * np.cos(s[:, 0]) / 2
         y = s[:, 1]
         z = s[:, 0] * np.sin(s[:, 0]) / 2
-        e = np.hstack([x, y, z])
+        e = np.stack([x, y, z], axis=1)
         return e
 
     def _get_obs(self):
