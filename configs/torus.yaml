@@ -56,6 +56,7 @@ train:
     clip_grad_norm: 1.0
     disable_gpu: False
     input_penalty: 1e-6
+    cost_radius: 2
 
 evaluation:
   num_points: 2
