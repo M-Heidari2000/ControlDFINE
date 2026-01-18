@@ -168,7 +168,7 @@ class SwissRoll(gym.Env):
         return obs, reward, terminated, truncated, info 
 
             
-def render(self):
+    def render(self):
         if self.render_mode != "rgb_array":
             return None
         
