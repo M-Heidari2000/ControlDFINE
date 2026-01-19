@@ -1,5 +1,4 @@
 import gymnasium as gym
-from pathlib import Path
 from gymnasium import spaces
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,7 +11,7 @@ class Cos(gym.Env):
     }
 
     x_dim = 1
-    y_dim = 2
+    y_dim = 1
     u_dim = 1
 
     def __init__(
@@ -58,7 +57,7 @@ class Cos(gym.Env):
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(2, ),
+            shape=(1, ),
             dtype=np.float32,
         )
 
@@ -72,8 +71,7 @@ class Cos(gym.Env):
 
     def manifold(self, s: np.ndarray):
         assert s.shape[1] == self.x_dim
-        # Embed 2D latent state into 3D torus manifold
-        e = np.hstack([np.cos(s), np.sin(s)])
+        e = np.cos(s)
         return e
 
     def _get_obs(self):
@@ -170,31 +168,74 @@ class Cos(gym.Env):
         if self.render_mode != "rgb_array":
             return None
 
-        # Current observation (what the agent actually sees; includes No noise if present)
-        obs_cur = self._get_obs().reshape(-1)          # shape (2,)
-        # Target observation (noise-free, since target obs isn't actually emitted by env)
-        obs_tgt = self.manifold(self._target).reshape(-1)  # shape (2,)
+        # Scalars
+        x  = float(self._state.reshape(-1)[0])
+        xt = float(self._target.reshape(-1)[0])
 
-        fig, ax = plt.subplots(figsize=(5, 5), dpi=120)
+        # Noise-free observations via manifold()
+        y_true = float(self.manifold(self._state).reshape(-1)[0])
+        y_tgt  = float(self.manifold(self._target).reshape(-1)[0])
 
-        # Plot the observation manifold: unit circle
-        theta = np.linspace(-np.pi, np.pi, 600)
-        circle = np.stack([np.cos(theta), np.sin(theta)], axis=1)
-        ax.plot(circle[:, 0], circle[:, 1], linewidth=2, label="manifold (cos x, sin x)")
+        # What agent actually sees (may be noisy)
+        y_seen = float(self._get_obs().reshape(-1)[0])
 
-        # Current + target in observation space
-        ax.scatter([obs_cur[0]], [obs_cur[1]], s=120, marker="o", label="current obs")
-        ax.scatter([obs_tgt[0]], [obs_tgt[1]], s=140, marker="X", label="target (noise-free)")
+        # Wrapped angular difference in [-pi, pi)
+        d = ((xt - x + np.pi) % (2.0 * np.pi)) - np.pi
 
-        # Cosmetics / axes
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_xlim(-1.2, 1.2)
-        ax.set_ylim(-1.2, 1.2)
+        # Domain curve
+        lo = float(self.state_space.low.reshape(-1)[0])
+        hi = float(self.state_space.high.reshape(-1)[0])
+        xs = np.linspace(lo, hi, 1200, dtype=np.float32).reshape(-1, 1)
+        ys = self.manifold(xs).reshape(-1)
+
+        fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=150)
+        fig.patch.set_facecolor("white")
+        ax.set_facecolor("white")
+
+        # Plot y = cos(x)
+        ax.plot(xs.reshape(-1), ys, linewidth=2.6, alpha=0.9, label="y = cos(x)")
+
+        # Vertical guides for current/target x
+        ax.axvline(x,  linewidth=1.2, alpha=0.25)
+        ax.axvline(xt, linewidth=1.2, alpha=0.25, linestyle="--")
+
+        # Current + target (noise-free)
+        ax.scatter([x],  [y_true], s=140, marker="o", label="current (noise-free)", zorder=5)
+        ax.scatter([xt], [y_tgt],  s=180, marker="X", label="target (noise-free)", zorder=6)
+
+        # Observed (if noisy)
+        if self.No is not None:
+            ax.scatter([x], [y_seen], s=140, marker="o",
+                    edgecolors="k", linewidths=1.2,
+                    label="current (observed)", zorder=7)
+            ax.plot([x, x], [y_true, y_seen], linewidth=1.2, alpha=0.7)
+
+        # Helpful y=0 line
+        ax.axhline(0.0, linewidth=1.0, alpha=0.2)
+
+        # Info box
+        info_txt = (
+            f"x   = {x:.3f} rad\n"
+            f"x*  = {xt:.3f} rad\n"
+            f"Δwrap = {d:.3f} rad\n"
+            f"step = {self._step}"
+        )
+        ax.text(
+            0.02, 0.98, info_txt,
+            transform=ax.transAxes, va="top", ha="left",
+            bbox=dict(boxstyle="round,pad=0.45", facecolor="white", alpha=0.9)
+        )
+
+        # Cosmetics
+        ax.set_xlim(lo, hi)
+        ax.set_ylim(-1.15, 1.15)
         ax.grid(True, alpha=0.25)
-        ax.set_xlabel("y[0] = cos(x)")
-        ax.set_ylabel("y[1] = sin(x)")
-        ax.set_title("Cos env render (observation space)")
-        ax.legend(loc="upper right")
+        ax.set_xlabel("x (latent state)")
+        ax.set_ylabel("y = cos(x) (observation)")
+        ax.set_title("Cos env render (1D observation)")
+        ax.legend(loc="lower left", framealpha=0.92)
+
+        fig.tight_layout(pad=0.3)
 
         # Convert to RGB array
         fig.canvas.draw()

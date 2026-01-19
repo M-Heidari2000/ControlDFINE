@@ -1,6 +1,7 @@
 from .torus import Torus
-from .cos import Cos
+from .circle import Circle
 from .swiss_roll import SwissRoll
+from .cos import Cos
 import numpy as np
 from omegaconf.dictconfig import DictConfig
 
@@ -18,8 +19,8 @@ def make(config: DictConfig):
                 render_mode="rgb_array",
                 periodic=config.periodic,
             )
-        case "cos":
-            env = Cos(
+        case "circle":
+            env = Circle(
                 A=np.array(config.A),
                 B=np.array(config.B),
                 Ns=np.array(config.Ns),
@@ -30,6 +31,16 @@ def make(config: DictConfig):
             )
         case "swiss_roll":
             env = SwissRoll(
+                A=np.array(config.A),
+                B=np.array(config.B),
+                Ns=np.array(config.Ns),
+                No=np.array(config.No),
+                horizon=config.horizon,
+                render_mode="rgb_array",
+                periodic=config.periodic, 
+            )
+        case "cos":
+            env = Cos(
                 A=np.array(config.A),
                 B=np.array(config.B),
                 Ns=np.array(config.Ns),

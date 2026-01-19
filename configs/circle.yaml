@@ -1,6 +1,6 @@
 seed: 0
 log_dir: "./log"
-notes: "swiss_roll"
+notes: "circle"
 run_name: "DFINE"
 
 data:
@@ -8,47 +8,44 @@ data:
   num_episodes: 1000
 
 env:
-  name: swiss_roll
-  horizon: 100
+  name: circle
+  horizon: 200
   periodic: False
 
   A:
-    - [1.0, 0.0]
-    - [0.0, 1.0]
+    - [1.0]
   B:
-    - [0.1,0.0]
-    - [0.0, 0.1]
+    - [0.1]
   Ns:
+    - [0.0001]
+  "No":
     - [0.0001, 0.0]
     - [0.0, 0.0001]
-  "No":
-    - [0.0001, 0.0, 0.0]
-    - [0.0, 0.0001, 0.0]
-    - [0.0, 0.0, 0.0001]
 
 train:
   backbone:
     num_updates: 2000
     test_interval: 10
-    x_dim: 3
-    a_dim: 3
+    x_dim: 1
+    a_dim: 1
     hidden_dim: 128
     min_var: 1e-2
     chunk_length: 32
     prediction_k: 8
     batch_size: 128
-    lr: 1e-3
+    lr: 3e-3
     eps: 1e-8
     weight_decay: 1e-6
     clip_grad_norm: 1.0
-    disable_gpu: False
-    filtering_weight: 1.0
+    disable_gpu: True
+    filtering_weight: 0.1
     mean_consistency_weight: 0.05
     kl_consistency_weight: 0.0
   cost:
     num_updates: 2500
     test_interval: 10
     chunk_length: 32
+    hidden_dim: 64
     batch_size: 256
     lr: 5e-4
     eps: 1e-8
@@ -56,7 +53,7 @@ train:
     clip_grad_norm: 1.0
     disable_gpu: False
     input_penalty: 1e-6
-    cost_radius: 11
+    cost_radius: 5
 
 evaluation:
   num_points: 1

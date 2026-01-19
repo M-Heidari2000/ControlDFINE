@@ -71,7 +71,6 @@ class SwissRoll(gym.Env):
 
     def manifold(self, s: np.ndarray):
         assert s.shape[1] == self.x_dim
-        # Embed 2D latent state into 3D SwissRoll manifold
         x = s[:, 0] * np.cos(s[:, 0]) / 2
         y = s[:, 1]
         z = s[:, 0] * np.sin(s[:, 0]) / 2
@@ -171,145 +170,104 @@ class SwissRoll(gym.Env):
     def render(self):
         if self.render_mode != "rgb_array":
             return None
-        
-        # Create figure and 3D axis with clean background
-        fig = plt.figure(figsize=(12, 10))
-        ax = fig.add_subplot(111, projection='3d')
-        ax.set_facecolor('#0f172a')
-        fig.patch.set_facecolor('#0f172a')
-        
-        # Generate Swiss Roll surface with higher resolution
-        s0 = np.linspace(-np.pi, np.pi, 150)
-        s1 = np.linspace(-np.pi, np.pi, 150)
+
+        # --- Figure / axis (bright, readable) ---
+        fig = plt.figure(figsize=(7.2, 6.2), dpi=150)
+        ax = fig.add_subplot(111, projection="3d")
+        fig.patch.set_facecolor("white")
+        ax.set_facecolor("white")
+
+        # --- Sample the latent grid and map via manifold() ---
+        lo = self.state_space.low.astype(np.float32)
+        hi = self.state_space.high.astype(np.float32)
+
+        s0 = np.linspace(lo[0], hi[0], 240, dtype=np.float32)
+        s1 = np.linspace(lo[1], hi[1], 80, dtype=np.float32)
         S0, S1 = np.meshgrid(s0, s1)
-        
-        # Flatten meshgrid and stack to create state samples
-        s_samples = np.column_stack([S0.flatten(), S1.flatten()])
-        
-        # Use the manifold method to compute 3D coordinates
-        manifold_samples = self.manifold(s_samples)
-        X = manifold_samples[:, 0].reshape(S0.shape)
-        Y = manifold_samples[:, 1].reshape(S0.shape)
-        Z = manifold_samples[:, 2].reshape(S0.shape)
-        
-        # Plot the Swiss Roll surface with improved styling
-        surf = ax.plot_surface(
-            X, 
-            Y, 
-            Z, 
-            alpha=0.35,
-            color='#94a3b8',
-            edgecolor='none',
+
+        s_samples = np.column_stack([S0.ravel(), S1.ravel()]).astype(np.float32)
+        M = self.manifold(s_samples)
+
+        X = M[:, 0].reshape(S0.shape)
+        Y = M[:, 1].reshape(S0.shape)
+        Z = M[:, 2].reshape(S0.shape)
+
+        # Color the surface by the roll parameter (S0) to reveal the spiral clearly
+        c = (S0 - S0.min()) / (S0.max() - S0.min() + 1e-8)
+
+        ax.plot_surface(
+            X, Y, Z,
+            facecolors=plt.cm.viridis(c),  # clear gradient along the roll
             linewidth=0,
             antialiased=True,
-            shade=True,
+            shade=False,
+            alpha=0.95,
         )
-        
-        # Get current state and target observations in 3D using manifold method
-        current_obs = self.manifold(self._state).flatten()
-        target_obs = self.manifold(self._target).flatten()
-        
-        # Plot current state as red dot with glow effect
-        ax.scatter(
-            current_obs[0], 
-            current_obs[1], 
-            current_obs[2], 
-            c='#ef4444', 
-            s=400, 
-            marker='o', 
-            label='Current State', 
-            edgecolors='#f87171', 
-            linewidths=3,
-            alpha=1.0,
-            depthshade=False,
+
+        # Wireframe overlay = depth/shape readability
+        ax.plot_wireframe(
+            X, Y, Z,
+            rstride=10, cstride=20,
+            linewidth=0.5,
+            alpha=0.25,
         )
-        ax.scatter(
-            current_obs[0], 
-            current_obs[1], 
-            current_obs[2], 
-            c='#ef4444', 
-            s=800, 
-            marker='o', 
-            edgecolors='none',
-            linewidths=0,
-            alpha=0.3,
-            depthshade=False,
+
+        # --- Centerline curve (s1 = 0) so you can "see the curve" instantly ---
+        s1_center = np.zeros_like(s0, dtype=np.float32)
+        center_states = np.stack([s0, s1_center], axis=1)
+        center_curve = self.manifold(center_states)
+
+        ax.plot(
+            center_curve[:, 0], center_curve[:, 1], center_curve[:, 2],
+            linewidth=3.0, alpha=0.9,
+            label="centerline (s1=0)",
         )
-        
-        # Plot target state as yellow cross with glow
-        ax.scatter(
-            target_obs[0], 
-            target_obs[1], 
-            target_obs[2], 
-            c='#eab308', 
-            s=400, 
-            marker='X', 
-            label='Target State', 
-            linewidths=0,
-            edgecolors='#facc15',
-            alpha=1.0,
-            depthshade=False,
-        )
-        ax.scatter(
-            target_obs[0], 
-            target_obs[1], 
-            target_obs[2], 
-            c='#eab308', 
-            s=800, 
-            marker='X', 
-            linewidths=0,
-            alpha=0.3,
-            depthshade=False,
-        )
-        
-        # Set labels and title with better styling
-        ax.set_xlabel('X', fontsize=14, color='#e2e8f0', labelpad=10)
-        ax.set_ylabel('Y', fontsize=14, color='#e2e8f0', labelpad=10)
-        ax.set_zlabel('Z', fontsize=14, color='#e2e8f0', labelpad=10)
-        ax.set_title(
-            'Swiss Roll Manifold Environment',
-            fontsize=18,
-            fontweight='bold',
-            color='#f1f5f9',
-            pad=20,
-        )
-        
-        # Style the legend
-        legend = ax.legend(
-            loc='upper left',
-            fontsize=12,
-            framealpha=0.9,
-            facecolor='#1e293b',
-            edgecolor='#475569',
-        )
-        for text in legend.get_texts():
-            text.set_color('#e2e8f0')
-        
-        # Set proper limits for Swiss Roll
-        ax.set_xlim([-np.pi/2, np.pi/2])
-        ax.set_ylim([-np.pi, np.pi])
-        ax.set_zlim([-np.pi/2, np.pi/2])
-        ax.set_box_aspect([1, 2, 1])
-        
-        # Style the axes
-        ax.xaxis.pane.fill = False
-        ax.yaxis.pane.fill = False
-        ax.zaxis.pane.fill = False
-        ax.xaxis.pane.set_edgecolor('#334155')
-        ax.yaxis.pane.set_edgecolor('#334155')
-        ax.zaxis.pane.set_edgecolor('#334155')
-        ax.grid(True, alpha=0.2, color='#475569')
-        ax.tick_params(colors='#cbd5e1', labelsize=10)
-        
-        # Set viewing angle
-        ax.view_init(elev=25, azim=45)
-        
-        # Convert plot to RGB array
+
+        # --- Current/target points (noise-free), and observed (if No) ---
+        obs_true = self.manifold(self._state).reshape(-1)   # noise-free current
+        obs_tgt  = self.manifold(self._target).reshape(-1)  # noise-free target
+
+        ax.scatter(obs_true[0], obs_true[1], obs_true[2], s=120, marker="o",
+                label="current (noise-free)", depthshade=False)
+        ax.scatter(obs_tgt[0], obs_tgt[1], obs_tgt[2], s=160, marker="X",
+                label="target (noise-free)", depthshade=False)
+
+        if self.No is not None:
+            obs_seen = self._get_obs().reshape(-1)  # what agent actually sees
+            ax.scatter(obs_seen[0], obs_seen[1], obs_seen[2], s=120, marker="o",
+                    label="current (observed)", depthshade=False)
+            ax.plot([obs_true[0], obs_seen[0]],
+                    [obs_true[1], obs_seen[1]],
+                    [obs_true[2], obs_seen[2]],
+                    linewidth=1.5, alpha=0.6)
+
+        # --- Nice limits / aspect ---
+        pad = 0.08
+        xmin, xmax = float(X.min()), float(X.max())
+        ymin, ymax = float(Y.min()), float(Y.max())
+        zmin, zmax = float(Z.min()), float(Z.max())
+        dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
+
+        ax.set_xlim(xmin - pad * dx, xmax + pad * dx)
+        ax.set_ylim(ymin - pad * dy, ymax + pad * dy)
+        ax.set_zlim(zmin - pad * dz, zmax + pad * dz)
+
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.grid(True, alpha=0.25)
+
+        # View angle that usually shows the "roll" clearly
+        ax.view_init(elev=22, azim=35)
+
+        ax.set_title("Swiss Roll (observation manifold)")
+        ax.legend(loc="upper left")
+
+        fig.tight_layout(pad=0.3)
+
+        # --- Convert to RGB array ---
         fig.canvas.draw()
         img = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
-        img = img.reshape(fig.canvas.get_width_height()[::-1] + (4,))
-        img = img[:, :, :3]  # Remove alpha channel
-        
+        img = img.reshape(fig.canvas.get_width_height()[::-1] + (4,))[:, :, :3]
         plt.close(fig)
-        
         return img

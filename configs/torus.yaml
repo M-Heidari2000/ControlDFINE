@@ -46,7 +46,7 @@ train:
     mean_consistency_weight: 0.05
     kl_consistency_weight: 0.0
   cost:
-    num_updates: 3000
+    num_updates: 2500
     test_interval: 10
     chunk_length: 32
     batch_size: 256
@@ -56,9 +56,9 @@ train:
     clip_grad_norm: 1.0
     disable_gpu: False
     input_penalty: 1e-6
-    cost_radius: 2
+    cost_radius: 11
 
 evaluation:
-  num_points: 2
-  num_regions: 2
+  num_points: 1
+  num_regions: 1
   planning_horizon: 8

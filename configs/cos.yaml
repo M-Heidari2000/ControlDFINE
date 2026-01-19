@@ -19,12 +19,11 @@ env:
   Ns:
     - [0.0001]
   "No":
-    - [0.0001, 0.0]
-    - [0.0, 0.0001]
+    - [0.0001]
 
 train:
   backbone:
-    num_updates: 40
+    num_updates: 2000
     test_interval: 10
     x_dim: 1
     a_dim: 1
@@ -42,7 +41,7 @@ train:
     mean_consistency_weight: 0.05
     kl_consistency_weight: 0.0
   cost:
-    num_updates: 30
+    num_updates: 2500
     test_interval: 10
     chunk_length: 32
     hidden_dim: 64
@@ -53,7 +52,7 @@ train:
     clip_grad_norm: 1.0
     disable_gpu: False
     input_penalty: 1e-6
-    cost_radius: 2
+    cost_radius: 5
 
 evaluation:
   num_points: 1

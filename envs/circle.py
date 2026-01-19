@@ -5,16 +5,14 @@ import matplotlib.pyplot as plt
 from typing import Optional
 
 
-class Torus(gym.Env):
+class Circle(gym.Env):
     metadata = {
         "render_modes": ["rgb_array"],
     }
 
-    x_dim = 2
-    y_dim = 3
-    u_dim = 2
-    radius1 = 1  # Minor radius (tube radius)
-    radius2 = 2  # Major radius (distance from center to tube center)
+    x_dim = 1
+    y_dim = 2
+    u_dim = 1
 
     def __init__(
         self,
@@ -43,23 +41,23 @@ class Torus(gym.Env):
         self.periodic = periodic
 
         self.state_space = spaces.Box(
-            low=np.array([-np.pi, -np.pi]),
-            high=np.array([np.pi, np.pi]),
-            shape=(2, ),
+            low=np.array([-np.pi]),
+            high=np.array([np.pi]),
+            shape=(1, ),
             dtype=np.float32,
         )
 
         self.action_space = spaces.Box(
             low=-1.0,
             high=1.0,
-            shape=(2, ),
+            shape=(1, ),
             dtype=np.float32,
         )
 
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(3, ),
+            shape=(2, ),
             dtype=np.float32,
         )
 
@@ -73,10 +71,7 @@ class Torus(gym.Env):
 
     def manifold(self, s: np.ndarray):
         assert s.shape[1] == self.x_dim
-        x = (self.radius2 + self.radius1 * np.sin(s[:, 0:1])) * np.cos(s[:, 1:2])
-        y = (self.radius2 + self.radius1 * np.sin(s[:, 0:1])) * np.sin(s[:, 1:2])
-        z = self.radius1 * np.cos(s[:, 0:1])
-        e = np.hstack([x, y, z])
+        e = np.hstack([np.cos(s), np.sin(s)])
         return e
 
     def _get_obs(self):
@@ -148,7 +143,7 @@ class Torus(gym.Env):
         terminated = False
         reward = 0.0
         obs = self._get_obs().flatten()
-    
+        
         if self.periodic:
             rng = self.state_space.high - self.state_space.low
             self._state = ((self._state - self.state_space.low) % rng) + self.state_space.low
@@ -173,106 +168,80 @@ class Torus(gym.Env):
         if self.render_mode != "rgb_array":
             return None
 
-        # --- Figure / axis (bright, readable) ---
-        fig = plt.figure(figsize=(7.2, 6.2), dpi=150)
-        ax = fig.add_subplot(111, projection="3d")
-        fig.patch.set_facecolor("white")
-        ax.set_facecolor("white")
+        # Noise-free embeddings (pure manifold of latent state)
+        obs_true = self.manifold(self._state).reshape(-1)      # (2,)
+        obs_tgt  = self.manifold(self._target).reshape(-1)     # (2,)
 
-        # --- Sample latent grid and map via manifold() ---
-        lo = self.state_space.low.astype(np.float32)
-        hi = self.state_space.high.astype(np.float32)
+        # What the agent actually observes (may include observation noise)
+        obs_seen = self._get_obs().reshape(-1)                 # (2,)
 
-        # Use the actual latent ranges ([-pi, pi]) so manifold() is used consistently
-        theta = np.linspace(lo[0], hi[0], 160, dtype=np.float32)  # s[:,0]
-        phi   = np.linspace(lo[1], hi[1], 200, dtype=np.float32)  # s[:,1]
-        TH, PH = np.meshgrid(theta, phi)
+        # Scalars for annotations / arc
+        x  = float(self._state.reshape(-1)[0])
+        xt = float(self._target.reshape(-1)[0])
 
-        s_samples = np.column_stack([TH.ravel(), PH.ravel()]).astype(np.float32)
-        M = self.manifold(s_samples)
+        # Wrapped angular difference in [-pi, pi)
+        d = ((xt - x + np.pi) % (2.0 * np.pi)) - np.pi
 
-        X = M[:, 0].reshape(TH.shape)
-        Y = M[:, 1].reshape(TH.shape)
-        Z = M[:, 2].reshape(TH.shape)
+        fig, ax = plt.subplots(figsize=(5.8, 5.8), dpi=140)
 
-        # Color by PH (wrap-around gradient reveals the donut structure)
-        c = (PH - PH.min()) / (PH.max() - PH.min() + 1e-8)
+        # --- Draw manifold (unit circle) using manifold() ---
+        lo = float(self.state_space.low.reshape(-1)[0])
+        hi = float(self.state_space.high.reshape(-1)[0])
+        theta = np.linspace(lo, hi, 900, dtype=np.float32).reshape(-1, 1)
+        circle = self.manifold(theta)
+        ax.plot(circle[:, 0], circle[:, 1], linewidth=2.5, alpha=0.55, label="manifold")
 
-        ax.plot_surface(
-            X, Y, Z,
-            facecolors=plt.cm.viridis(c),
-            linewidth=0,
-            antialiased=True,
-            shade=False,
-            alpha=0.95,
-        )
+        # --- Shortest arc from current -> target ---
+        theta_arc = np.linspace(x, x + d, 160, dtype=np.float32).reshape(-1, 1)
+        arc = self.manifold(theta_arc)
+        ax.plot(arc[:, 0], arc[:, 1], linewidth=6, alpha=0.18, label="shortest arc")
 
-        # Wireframe overlay for depth cues
-        ax.plot_wireframe(
-            X, Y, Z,
-            rstride=12, cstride=16,
-            linewidth=0.5,
-            alpha=0.25,
-        )
+        # Origin marker
+        ax.scatter([0.0], [0.0], s=40, marker="+", alpha=0.6)
 
-        # --- Current / target points (noise-free) ---
-        obs_cur = self.manifold(self._state).reshape(-1)
-        obs_tgt = self.manifold(self._target).reshape(-1)
+        # Radial lines (helpful visually)
+        ax.plot([0.0, obs_true[0]], [0.0, obs_true[1]], linewidth=1.6, alpha=0.25)
+        ax.plot([0.0, obs_tgt[0]],  [0.0, obs_tgt[1]],  linewidth=1.6, alpha=0.35, linestyle="--")
 
-        ax.scatter(obs_cur[0], obs_cur[1], obs_cur[2],
-                s=130, marker="o", label="current (noise-free)", depthshade=False)
-        ax.scatter(obs_tgt[0], obs_tgt[1], obs_tgt[2],
-                s=170, marker="X", label="target (noise-free)", depthshade=False)
+        # --- Points ---
+        ax.scatter([obs_tgt[0]],  [obs_tgt[1]],  s=190, marker="X", label="target (noise-free)")
+        ax.scatter([obs_true[0]], [obs_true[1]], s=130, marker="o", alpha=0.55, label="current (noise-free)")
 
-        # Optional: show observed noisy point
+        # If observation noise exists, show the noisy observation separately
         if self.No is not None:
-            obs_seen = self._get_obs().reshape(-1)
-            ax.scatter(obs_seen[0], obs_seen[1], obs_seen[2],
-                    s=130, marker="o", label="current (observed)", depthshade=False)
-            ax.plot([obs_cur[0], obs_seen[0]],
-                    [obs_cur[1], obs_seen[1]],
-                    [obs_cur[2], obs_seen[2]],
-                    linewidth=1.5, alpha=0.6)
+            ax.scatter(
+                [obs_seen[0]], [obs_seen[1]],
+                s=130, marker="o",
+                edgecolors="k", linewidths=1.2,
+                label="current (observed)"
+            )
+            # Link noise-free -> observed
+            ax.plot([obs_true[0], obs_seen[0]], [obs_true[1], obs_seen[1]], linewidth=1.2, alpha=0.5)
 
-        # --- Draw parameter circles through current point (super clarifying) ---
-        th0 = float(self._state.reshape(-1)[0])
-        ph0 = float(self._state.reshape(-1)[1])
+        # --- Info box ---
+        info_txt = (
+            f"x   = {x:.3f} rad\n"
+            f"x*  = {xt:.3f} rad\n"
+            f"Δwrap = {d:.3f} rad\n"
+            f"step = {self._step}"
+        )
+        ax.text(
+            0.02, 0.98, info_txt,
+            transform=ax.transAxes, va="top", ha="left",
+            bbox=dict(boxstyle="round,pad=0.45", facecolor="white", alpha=0.85)
+        )
 
-        # Circle 1: vary phi, hold theta = th0
-        ph_line = np.linspace(lo[1], hi[1], 400, dtype=np.float32)
-        s_line1 = np.stack([np.full_like(ph_line, th0, dtype=np.float32), ph_line], axis=1)
-        C1 = self.manifold(s_line1)
+        # Cosmetics
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_xlim(-1.25, 1.25)
+        ax.set_ylim(-1.25, 1.25)
+        ax.grid(True, alpha=0.22)
+        ax.set_xlabel("y[0]")
+        ax.set_ylabel("y[1]")
+        ax.set_title("Circle env render (observation space)")
+        ax.legend(loc="lower right", framealpha=0.92)
 
-        # Circle 2: vary theta, hold phi = ph0
-        th_line = np.linspace(lo[0], hi[0], 400, dtype=np.float32)
-        s_line2 = np.stack([th_line, np.full_like(th_line, ph0, dtype=np.float32)], axis=1)
-        C2 = self.manifold(s_line2)
-
-        ax.plot(C1[:, 0], C1[:, 1], C1[:, 2], linewidth=2.6, alpha=0.85, label="phi-circle @ current theta")
-        ax.plot(C2[:, 0], C2[:, 1], C2[:, 2], linewidth=2.6, alpha=0.85, linestyle="--", label="theta-circle @ current phi")
-
-        # --- Limits / aspect ---
-        pad = 0.08
-        xmin, xmax = float(X.min()), float(X.max())
-        ymin, ymax = float(Y.min()), float(Y.max())
-        zmin, zmax = float(Z.min()), float(Z.max())
-        dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
-        ax.set_xlim(xmin - pad * dx, xmax + pad * dx)
-        ax.set_ylim(ymin - pad * dy, ymax + pad * dy)
-        ax.set_zlim(zmin - pad * dz, zmax + pad * dz)
-
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.set_zlabel("Z")
-        ax.grid(True, alpha=0.25)
-
-        ax.set_title("Torus (observation manifold)")
-        ax.view_init(elev=22, azim=35)
-        ax.legend(loc="upper left")
-
-        fig.tight_layout(pad=0.3)
-
-        # --- Convert to RGB array ---
+        # Convert to RGB array
         fig.canvas.draw()
         img = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
         img = img.reshape(fig.canvas.get_width_height()[::-1] + (4,))[:, :, :3]
