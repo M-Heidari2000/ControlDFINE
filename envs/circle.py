@@ -167,80 +167,35 @@ class Circle(gym.Env):
     def render(self):
         if self.render_mode != "rgb_array":
             return None
-
-        # Noise-free embeddings (pure manifold of latent state)
-        obs_true = self.manifold(self._state).reshape(-1)      # (2,)
-        obs_tgt  = self.manifold(self._target).reshape(-1)     # (2,)
-
-        # What the agent actually observes (may include observation noise)
-        obs_seen = self._get_obs().reshape(-1)                 # (2,)
-
-        # Scalars for annotations / arc
-        x  = float(self._state.reshape(-1)[0])
-        xt = float(self._target.reshape(-1)[0])
-
-        # Wrapped angular difference in [-pi, pi)
-        d = ((xt - x + np.pi) % (2.0 * np.pi)) - np.pi
-
-        fig, ax = plt.subplots(figsize=(5.8, 5.8), dpi=140)
-
-        # --- Draw manifold (unit circle) using manifold() ---
+    
+        # Current observation (what agent sees; may include noise)
+        obs_cur = self._get_obs().reshape(-1)              # (2,)
+        # Target observation (noise-free)
+        obs_tgt = self.manifold(self._target).reshape(-1)  # (2,)
+    
+        fig, ax = plt.subplots(figsize=(6, 6), dpi=180)
+    
+        # Manifold curve using manifold()
         lo = float(self.state_space.low.reshape(-1)[0])
         hi = float(self.state_space.high.reshape(-1)[0])
-        theta = np.linspace(lo, hi, 900, dtype=np.float32).reshape(-1, 1)
-        circle = self.manifold(theta)
-        ax.plot(circle[:, 0], circle[:, 1], linewidth=2.5, alpha=0.55, label="manifold")
-
-        # --- Shortest arc from current -> target ---
-        theta_arc = np.linspace(x, x + d, 160, dtype=np.float32).reshape(-1, 1)
-        arc = self.manifold(theta_arc)
-        ax.plot(arc[:, 0], arc[:, 1], linewidth=6, alpha=0.18, label="shortest arc")
-
-        # Origin marker
-        ax.scatter([0.0], [0.0], s=40, marker="+", alpha=0.6)
-
-        # Radial lines (helpful visually)
-        ax.plot([0.0, obs_true[0]], [0.0, obs_true[1]], linewidth=1.6, alpha=0.25)
-        ax.plot([0.0, obs_tgt[0]],  [0.0, obs_tgt[1]],  linewidth=1.6, alpha=0.35, linestyle="--")
-
-        # --- Points ---
-        ax.scatter([obs_tgt[0]],  [obs_tgt[1]],  s=190, marker="X", label="target (noise-free)")
-        ax.scatter([obs_true[0]], [obs_true[1]], s=130, marker="o", alpha=0.55, label="current (noise-free)")
-
-        # If observation noise exists, show the noisy observation separately
-        if self.No is not None:
-            ax.scatter(
-                [obs_seen[0]], [obs_seen[1]],
-                s=130, marker="o",
-                edgecolors="k", linewidths=1.2,
-                label="current (observed)"
-            )
-            # Link noise-free -> observed
-            ax.plot([obs_true[0], obs_seen[0]], [obs_true[1], obs_seen[1]], linewidth=1.2, alpha=0.5)
-
-        # --- Info box ---
-        info_txt = (
-            f"x   = {x:.3f} rad\n"
-            f"x*  = {xt:.3f} rad\n"
-            f"Δwrap = {d:.3f} rad\n"
-            f"step = {self._step}"
-        )
-        ax.text(
-            0.02, 0.98, info_txt,
-            transform=ax.transAxes, va="top", ha="left",
-            bbox=dict(boxstyle="round,pad=0.45", facecolor="white", alpha=0.85)
-        )
-
+        theta = np.linspace(lo, hi, 800, dtype=np.float32).reshape(-1, 1)
+        curve = self.manifold(theta)  # (N,2)
+    
+        ax.plot(curve[:, 0], curve[:, 1], linewidth=3, alpha=0.6, color="lightblue")
+    
+        # Points: current obs (black), target (red)
+        ax.scatter(obs_cur[0], obs_cur[1], s=90, c="black", marker="o", label="current position")
+        ax.scatter(obs_tgt[0], obs_tgt[1], s=120, c="red", marker="X", label="target")
+    
         # Cosmetics
         ax.set_aspect("equal", adjustable="box")
-        ax.set_xlim(-1.25, 1.25)
-        ax.set_ylim(-1.25, 1.25)
-        ax.grid(True, alpha=0.22)
+        ax.set_xlim(-1.2, 1.2)
+        ax.set_ylim(-1.2, 1.2)
+        ax.grid(True, alpha=0.2)
         ax.set_xlabel("y[0]")
         ax.set_ylabel("y[1]")
-        ax.set_title("Circle env render (observation space)")
-        ax.legend(loc="lower right", framealpha=0.92)
-
+        ax.legend()
+    
         # Convert to RGB array
         fig.canvas.draw()
         img = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)

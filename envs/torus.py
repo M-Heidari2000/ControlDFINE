@@ -172,107 +172,77 @@ class Torus(gym.Env):
     def render(self):
         if self.render_mode != "rgb_array":
             return None
-
-        # --- Figure / axis (bright, readable) ---
-        fig = plt.figure(figsize=(7.2, 6.2), dpi=150)
+    
+        fig = plt.figure(figsize=(7.0, 7.0), dpi=160)
         ax = fig.add_subplot(111, projection="3d")
         fig.patch.set_facecolor("white")
         ax.set_facecolor("white")
-
-        # --- Sample latent grid and map via manifold() ---
+    
         lo = self.state_space.low.astype(np.float32)
         hi = self.state_space.high.astype(np.float32)
-
-        # Use the actual latent ranges ([-pi, pi]) so manifold() is used consistently
-        theta = np.linspace(lo[0], hi[0], 160, dtype=np.float32)  # s[:,0]
-        phi   = np.linspace(lo[1], hi[1], 200, dtype=np.float32)  # s[:,1]
+    
+        # Avoid duplicated seam in torus parameterization
+        n_th, n_ph = 180, 220
+        theta = np.linspace(lo[0], hi[0], n_th, endpoint=False, dtype=np.float32)
+        phi   = np.linspace(lo[1], hi[1], n_ph, endpoint=False, dtype=np.float32)
         TH, PH = np.meshgrid(theta, phi)
-
+    
         s_samples = np.column_stack([TH.ravel(), PH.ravel()]).astype(np.float32)
         M = self.manifold(s_samples)
-
+    
         X = M[:, 0].reshape(TH.shape)
         Y = M[:, 1].reshape(TH.shape)
         Z = M[:, 2].reshape(TH.shape)
-
-        # Color by PH (wrap-around gradient reveals the donut structure)
-        c = (PH - PH.min()) / (PH.max() - PH.min() + 1e-8)
-
+    
+        # SwissRoll-style: translucent sheet + faint grid (edges), no extra wireframe
         ax.plot_surface(
             X, Y, Z,
-            facecolors=plt.cm.viridis(c),
-            linewidth=0,
-            antialiased=True,
+            color="lightsteelblue",
+            alpha=0.20,
             shade=False,
-            alpha=0.95,
+            rstride=1, cstride=1,
+            linewidth=0.25,
+            edgecolor=(0.10, 0.25, 0.70, 0.12),  # faint bluish grid
+            antialiased=True,
         )
-
-        # Wireframe overlay for depth cues
-        ax.plot_wireframe(
-            X, Y, Z,
-            rstride=12, cstride=16,
-            linewidth=0.5,
-            alpha=0.25,
-        )
-
-        # --- Current / target points (noise-free) ---
-        obs_cur = self.manifold(self._state).reshape(-1)
-        obs_tgt = self.manifold(self._target).reshape(-1)
-
+    
+        # Points (minimal)
+        obs_cur = self._get_obs().reshape(-1)               # current (observed)
+        obs_tgt = self.manifold(self._target).reshape(-1)   # target (noise-free)
+    
         ax.scatter(obs_cur[0], obs_cur[1], obs_cur[2],
-                s=130, marker="o", label="current (noise-free)", depthshade=False)
+                   s=140, c="black", marker="o", label="current", depthshade=False)
         ax.scatter(obs_tgt[0], obs_tgt[1], obs_tgt[2],
-                s=170, marker="X", label="target (noise-free)", depthshade=False)
-
-        # Optional: show observed noisy point
-        if self.No is not None:
-            obs_seen = self._get_obs().reshape(-1)
-            ax.scatter(obs_seen[0], obs_seen[1], obs_seen[2],
-                    s=130, marker="o", label="current (observed)", depthshade=False)
-            ax.plot([obs_cur[0], obs_seen[0]],
-                    [obs_cur[1], obs_seen[1]],
-                    [obs_cur[2], obs_seen[2]],
-                    linewidth=1.5, alpha=0.6)
-
-        # --- Draw parameter circles through current point (super clarifying) ---
-        th0 = float(self._state.reshape(-1)[0])
-        ph0 = float(self._state.reshape(-1)[1])
-
-        # Circle 1: vary phi, hold theta = th0
-        ph_line = np.linspace(lo[1], hi[1], 400, dtype=np.float32)
-        s_line1 = np.stack([np.full_like(ph_line, th0, dtype=np.float32), ph_line], axis=1)
-        C1 = self.manifold(s_line1)
-
-        # Circle 2: vary theta, hold phi = ph0
-        th_line = np.linspace(lo[0], hi[0], 400, dtype=np.float32)
-        s_line2 = np.stack([th_line, np.full_like(th_line, ph0, dtype=np.float32)], axis=1)
-        C2 = self.manifold(s_line2)
-
-        ax.plot(C1[:, 0], C1[:, 1], C1[:, 2], linewidth=2.6, alpha=0.85, label="phi-circle @ current theta")
-        ax.plot(C2[:, 0], C2[:, 1], C2[:, 2], linewidth=2.6, alpha=0.85, linestyle="--", label="theta-circle @ current phi")
-
-        # --- Limits / aspect ---
-        pad = 0.08
+                   s=180, c="red", marker="X", label="target", depthshade=False)
+    
+        # True equal aspect: equal limits + box aspect
         xmin, xmax = float(X.min()), float(X.max())
         ymin, ymax = float(Y.min()), float(Y.max())
         zmin, zmax = float(Z.min()), float(Z.max())
-        dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
-        ax.set_xlim(xmin - pad * dx, xmax + pad * dx)
-        ax.set_ylim(ymin - pad * dy, ymax + pad * dy)
-        ax.set_zlim(zmin - pad * dz, zmax + pad * dz)
-
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.set_zlabel("Z")
-        ax.grid(True, alpha=0.25)
-
-        ax.set_title("Torus (observation manifold)")
-        ax.view_init(elev=22, azim=35)
-        ax.legend(loc="upper left")
-
-        fig.tight_layout(pad=0.3)
-
-        # --- Convert to RGB array ---
+    
+        xmid, ymid, zmid = (xmin + xmax)/2, (ymin + ymax)/2, (zmin + zmax)/2
+        max_range = max(xmax - xmin, ymax - ymin, zmax - zmin)
+        half = 0.55 * max_range
+    
+        ax.set_xlim(xmid - half, xmid + half)
+        ax.set_ylim(ymid - half, ymid + half)
+        ax.set_zlim(zmid - half, zmid + half)
+        ax.set_box_aspect((1, 1, 1))
+    
+        # Clean look
+        ax.xaxis.pane.set_alpha(0.0)
+        ax.yaxis.pane.set_alpha(0.0)
+        ax.zaxis.pane.set_alpha(0.0)
+        ax.grid(True, alpha=0.15)
+    
+        ax.set_xlabel("y[0]")
+        ax.set_ylabel("y[1]")
+        ax.set_zlabel("y[2]")
+        ax.view_init(elev=28, azim=35)
+        ax.legend(loc="upper left", framealpha=0.9)
+    
+        fig.tight_layout(pad=0.2)
+    
         fig.canvas.draw()
         img = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
         img = img.reshape(fig.canvas.get_width_height()[::-1] + (4,))[:, :, :3]

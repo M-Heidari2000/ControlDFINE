@@ -167,76 +167,42 @@ class Cos(gym.Env):
     def render(self):
         if self.render_mode != "rgb_array":
             return None
-
-        # Scalars
-        x  = float(self._state.reshape(-1)[0])
+    
+        # Current latent x (x-position), current observed y (may be noisy)
+        x = float(self._state.reshape(-1)[0])
+        y_cur = float(self._get_obs().reshape(-1)[0])
+    
+        # Target latent x*, target noise-free y*
         xt = float(self._target.reshape(-1)[0])
-
-        # Noise-free observations via manifold()
-        y_true = float(self.manifold(self._state).reshape(-1)[0])
-        y_tgt  = float(self.manifold(self._target).reshape(-1)[0])
-
-        # What agent actually sees (may be noisy)
-        y_seen = float(self._get_obs().reshape(-1)[0])
-
-        # Wrapped angular difference in [-pi, pi)
-        d = ((xt - x + np.pi) % (2.0 * np.pi)) - np.pi
-
-        # Domain curve
+        y_tgt = float(self.manifold(self._target).reshape(-1)[0])
+    
+        # Curve y = cos(x) using manifold()
         lo = float(self.state_space.low.reshape(-1)[0])
         hi = float(self.state_space.high.reshape(-1)[0])
         xs = np.linspace(lo, hi, 1200, dtype=np.float32).reshape(-1, 1)
         ys = self.manifold(xs).reshape(-1)
-
-        fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=150)
+    
+        fig, ax = plt.subplots(figsize=(7.0, 4.2), dpi=180)
         fig.patch.set_facecolor("white")
         ax.set_facecolor("white")
-
-        # Plot y = cos(x)
-        ax.plot(xs.reshape(-1), ys, linewidth=2.6, alpha=0.9, label="y = cos(x)")
-
-        # Vertical guides for current/target x
-        ax.axvline(x,  linewidth=1.2, alpha=0.25)
-        ax.axvline(xt, linewidth=1.2, alpha=0.25, linestyle="--")
-
-        # Current + target (noise-free)
-        ax.scatter([x],  [y_true], s=140, marker="o", label="current (noise-free)", zorder=5)
-        ax.scatter([xt], [y_tgt],  s=180, marker="X", label="target (noise-free)", zorder=6)
-
-        # Observed (if noisy)
-        if self.No is not None:
-            ax.scatter([x], [y_seen], s=140, marker="o",
-                    edgecolors="k", linewidths=1.2,
-                    label="current (observed)", zorder=7)
-            ax.plot([x, x], [y_true, y_seen], linewidth=1.2, alpha=0.7)
-
-        # Helpful y=0 line
-        ax.axhline(0.0, linewidth=1.0, alpha=0.2)
-
-        # Info box
-        info_txt = (
-            f"x   = {x:.3f} rad\n"
-            f"x*  = {xt:.3f} rad\n"
-            f"Δwrap = {d:.3f} rad\n"
-            f"step = {self._step}"
-        )
-        ax.text(
-            0.02, 0.98, info_txt,
-            transform=ax.transAxes, va="top", ha="left",
-            bbox=dict(boxstyle="round,pad=0.45", facecolor="white", alpha=0.9)
-        )
-
+    
+        # Manifold curve
+        ax.plot(xs.reshape(-1), ys, linewidth=3, alpha=0.6, color="lightblue")
+    
+        # Points with labels
+        ax.scatter([x],  [y_cur], s=90,  c="black", marker="o", label="current", zorder=5)
+        ax.scatter([xt], [y_tgt], s=120, c="red",   marker="X", label="target",  zorder=6)
+    
         # Cosmetics
         ax.set_xlim(lo, hi)
         ax.set_ylim(-1.15, 1.15)
-        ax.grid(True, alpha=0.25)
-        ax.set_xlabel("x (latent state)")
-        ax.set_ylabel("y = cos(x) (observation)")
-        ax.set_title("Cos env render (1D observation)")
-        ax.legend(loc="lower left", framealpha=0.92)
-
+        ax.grid(True, alpha=0.2)
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.legend(loc="upper right", framealpha=0.9)
+    
         fig.tight_layout(pad=0.3)
-
+    
         # Convert to RGB array
         fig.canvas.draw()
         img = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
