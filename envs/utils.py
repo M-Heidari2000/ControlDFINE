@@ -24,6 +24,7 @@ def collect_data(
     env: gym.Env,
     data_dir: Union[str, Path],
     num_episodes: int = 100,
+    action_repeat: int = 1,
 ) -> MinariStorage:
 
     data_dir = Path(data_dir)
@@ -52,9 +53,15 @@ def collect_data(
         )
 
         done = False
-        while not done:
+        action_counter = 0
+        action = env.action_space.sample()
 
-            action = env.action_space.sample()
+        while not done:
+            
+            if action_counter >= action_repeat:
+                action = env.action_space.sample()
+                action_counter = 0
+            
             next_obs, reward, terminated, truncated, next_info = env.step(action=action)
 
             episode.observations.append(np.array(obs, copy=True))
@@ -69,6 +76,7 @@ def collect_data(
 
             done = terminated or truncated
             obs, info = next_obs, next_info
+            action_counter += 1
 
         storage.update_episodes([episode])
 
