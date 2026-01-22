@@ -5,7 +5,7 @@ from IPython.display import display, HTML
 
 def display_frames_as_gif(frames):
     """Displays a list of frames as a gif, with controls."""
-    fig = plt.figure(figsize=(3, 3))
+    fig = plt.figure(figsize=(5, 5))
     ax = fig.add_subplot(1, 1, 1)
     
     patch = ax.imshow(frames[0])
