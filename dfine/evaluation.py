@@ -32,7 +32,10 @@ def trial(
         planned_actions = oracle(x=x)
         action = planned_actions[0].flatten()
         obs, _, terminated, truncated, info = env.step(action=action)
-        oracle_cost += np.linalg.norm(obs - obs_target) ** 2
+        if terminated:
+            oracle_cost += np.inf
+        else:
+            oracle_cost += np.linalg.norm(obs - obs_target) ** 2
         done = terminated or truncated
 
     # control with the learned model
@@ -45,7 +48,10 @@ def trial(
         planned_actions = agent(y=obs, u=action, explore=False)
         action = planned_actions[0].flatten()
         obs, _, terminated, truncated, _ = env.step(action=action)
-        total_cost += np.linalg.norm(obs - obs_target) ** 2
+        if terminated:
+            total_cost += np.inf
+        else:
+            total_cost += np.linalg.norm(obs - obs_target) ** 2
         done = terminated or truncated
 
     return total_cost.item() / oracle_cost.item()
