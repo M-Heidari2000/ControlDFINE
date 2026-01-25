@@ -142,7 +142,6 @@ class Circle(gym.Env):
         truncated = bool(self._step >= self.horizon)
         terminated = False
         reward = 0.0
-        obs = self._get_obs().flatten()
         
         if self.periodic:
             rng = self.state_space.high - self.state_space.low
@@ -156,6 +155,7 @@ class Circle(gym.Env):
             if not is_valid:
                 terminated = True
 
+        obs = self._get_obs().flatten()
         info = {
             "state": self._state.copy().flatten(),
             "target": self._target.copy().flatten(),
