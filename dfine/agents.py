@@ -35,7 +35,7 @@ class IMPCAgent:
 
         # Infer the latent target state
         with torch.no_grad():
-            a = self.encoder(obs_target.reshape(1, -1))
+            a = self.encoder(self.obs_target.reshape(1, -1))
             _, _, C, _, _ = self.dynamics_model.get_dynamics(x=self.dist.loc)
             C = C.squeeze(0)
             self.x_target = a @ torch.linalg.pinv(C).T
