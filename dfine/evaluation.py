@@ -75,12 +75,12 @@ def evaluate(
         for sample in region["samples"]:
             # train a cost function for this target
             obs_target = env.manifold(sample.reshape(1, -1))
-            obs_target = obs_scaler.transform(obs_target).flatten()
             # create agent
             agent = IMPCAgent(
                 encoder=encoder,
                 dynamics_model=dynamics_model,
                 obs_target=obs_target,
+                obs_scaler=obs_scaler,
                 planning_horizon=eval_config.planning_horizon,
             )
 

@@ -14,6 +14,7 @@ class IMPCAgent:
         encoder,
         dynamics_model,
         obs_target,
+        obs_scaler,
         planning_horizon: int,
         num_iterations: int = 10,
         action_noise: float = 0.3,
@@ -23,10 +24,14 @@ class IMPCAgent:
         self.num_iterations = num_iterations
         self.planning_horizon = planning_horizon
         self.action_noise = action_noise
+        self.obs_scaler = obs_scaler
 
         self.device = next(encoder.parameters()).device
 
-        self.obs_target = torch.as_tensor(obs_target, device=self.device)
+        self.obs_target = torch.as_tensor(
+            self.obs_scaler.transform(obs_target).reshape(1, -1),
+            device=self.device
+        )
 
         self.dist = MultivariateNormal(
             loc=torch.zeros((1, self.dynamics_model.x_dim), device=self.device),
@@ -35,7 +40,7 @@ class IMPCAgent:
 
         # Infer the latent target state
         with torch.no_grad():
-            a = self.encoder(self.obs_target.reshape(1, -1))
+            a = self.encoder(self.obs_target)
             _, _, C, _, _ = self.dynamics_model.get_dynamics(x=self.dist.loc)
             C = C.squeeze(0)
             self.x_target = a @ torch.linalg.pinv(C).T
@@ -54,7 +59,8 @@ class IMPCAgent:
         """
 
         # convert y_t to a torch tensor and add a batch dimension
-        y = torch.as_tensor(y, device=self.device).unsqueeze(0)
+        y = self.obs_scaler.transform(y.reshape(1, -1))
+        y = torch.as_tensor(y, device=self.device)
 
         # no learning takes place here
         with torch.no_grad():
