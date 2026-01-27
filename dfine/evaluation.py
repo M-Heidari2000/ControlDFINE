@@ -5,6 +5,7 @@ from .agents import IMPCAgent, OracleMPC
 from omegaconf.dictconfig import DictConfig
 from .models import Dynamics, Encoder
 from .utils import make_grid
+from sklearn.preprocessing import StandardScaler
 
 
 def trial(
@@ -60,6 +61,7 @@ def evaluate(
     env: gym.Env,
     dynamics_model: Dynamics,
     encoder: Encoder,
+    obs_scaler: StandardScaler,
 ):
     target_regions = make_grid(
         low=env.state_space.low,
@@ -72,7 +74,8 @@ def evaluate(
         costs = []
         for sample in region["samples"]:
             # train a cost function for this target
-            obs_target = env.manifold(sample.reshape(1, -1)).flatten()
+            obs_target = env.manifold(sample.reshape(1, -1))
+            obs_target = obs_scaler.transform(obs_target).flatten()
             # create agent
             agent = IMPCAgent(
                 encoder=encoder,
