@@ -5,8 +5,6 @@ from .agents import IMPCAgent, OracleMPC
 from omegaconf.dictconfig import DictConfig
 from .models import Dynamics, Encoder
 from .utils import make_grid
-from .memory import ReplayBuffer
-from .train import train_cost
 
 
 def trial(
@@ -59,12 +57,9 @@ def trial(
 
 def evaluate(
     eval_config: DictConfig,
-    cost_train_config: DictConfig,
     env: gym.Env,
     dynamics_model: Dynamics,
     encoder: Encoder,
-    train_buffer: ReplayBuffer,
-    test_buffer: ReplayBuffer,
 ):
     target_regions = make_grid(
         low=env.state_space.low,
@@ -78,27 +73,18 @@ def evaluate(
         for sample in region["samples"]:
             # train a cost function for this target
             obs_target = env.manifold(sample.reshape(1, -1)).flatten()
-            train_buffer = train_buffer.map_costs(obs_target=obs_target)
-            test_buffer = test_buffer.map_costs(obs_target=obs_target)
-            cost_model = train_cost(
-                config=cost_train_config,
-                encoder=encoder,
-                dynamics_model=dynamics_model,
-                train_buffer=train_buffer,
-                test_buffer=test_buffer,
-            )
             # create agent
             agent = IMPCAgent(
                 encoder=encoder,
                 dynamics_model=dynamics_model,
-                cost_model=cost_model,
+                obs_target=obs_target,
                 planning_horizon=eval_config.planning_horizon,
             )
 
             # create oracle
-            device = next(cost_model.parameters()).device
+            device = next(dynamics_model.parameters()).device
             Q = torch.eye(env.state_space.shape[0], device=device)
-            R = cost_model.R
+            R = torch.eye(dynamics_model.u_dim, dtype=torch.float32, device=device) * 1e-6
             q = -torch.as_tensor(sample, device=device).reshape(1, -1) @ Q
             A=torch.as_tensor(env.A, device=device)
             B=torch.as_tensor(env.B, device=device)

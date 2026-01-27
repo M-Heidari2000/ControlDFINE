@@ -79,12 +79,9 @@ if __name__ == "__main__":
     # test the model
     eval_results = evaluate(
         eval_config=config.evaluation,
-        cost_train_config=config.train.cost,
         env=env,
         dynamics_model=dynamics_model,
         encoder=encoder,
-        train_buffer=train_buffer,
-        test_buffer=test_buffer
     )
 
     eval_results = [jsonify(er) for er in eval_results]

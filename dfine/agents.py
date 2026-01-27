@@ -13,24 +13,32 @@ class IMPCAgent:
         self,
         encoder,
         dynamics_model,
-        cost_model,
+        obs_target,
         planning_horizon: int,
         num_iterations: int = 10,
         action_noise: float = 0.3,
     ):
         self.encoder = encoder
         self.dynamics_model = dynamics_model
-        self.cost_model = cost_model
         self.num_iterations = num_iterations
         self.planning_horizon = planning_horizon
         self.action_noise = action_noise
 
         self.device = next(encoder.parameters()).device
 
+        self.obs_target = torch.as_tensor(obs_target, device=self.device)
+
         self.dist = MultivariateNormal(
             loc=torch.zeros((1, self.dynamics_model.x_dim), device=self.device),
             covariance_matrix=torch.eye(self.dynamics_model.x_dim, device=self.device).unsqueeze(0)
         )
+
+        # Infer the latent target state
+        with torch.no_grad():
+            a = self.encoder(obs_target.reshape(1, -1))
+            _, _, C, _, _ = self.dynamics_model.get_dynamics(x=self.dist.loc)
+            C = C.squeeze(0)
+            self.x_target = a @ torch.linalg.pinv(C).T
 
         self.reference_actions = torch.zeros(
             (self.planning_horizon, 1, self.dynamics_model.u_dim),
@@ -74,13 +82,15 @@ class IMPCAgent:
                 # rollout a trajectory with current policy
                 for t in range(self.planning_horizon):
                     A, B, _, _, _ = self.dynamics_model.get_dynamics(state)
-                    Q, q = self.cost_model.get_cost_matrices(state)
-                    A, B, Q, q = A.squeeze(0), B.squeeze(0), Q.squeeze(0), q.squeeze(0)
+                    A, B = A.squeeze(0), B.squeeze(0)
                     state = state @ A.T + planned_actions[t] @ B.T
                     As.append(A)
                     Bs.append(B)
-                    Qs.append(Q)
-                    qs.append(q)
+                    Qs.append(
+                        torch.eye(self.dynamics_model.x_dim, dtype=torch.float32, device=self.device)
+                    )
+                    qs.append(self.x_target)
+                    
                 # compute a new policy
                 planned_actions, planned_states = self._plan(
                     As=As,
@@ -107,8 +117,9 @@ class IMPCAgent:
         F = torch.stack(F_list, dim=0)
         f = torch.zeros((self.planning_horizon, 1, x_dim), device=self.device)
 
+        R = torch.eye(self.dynamics_model.u_dim, dtype=torch.float32, device=self.device) * 1e-6
         C = torch.stack([
-            torch.block_diag(Q, self.cost_model.R).unsqueeze(0) for Q in Qs
+            torch.block_diag(Q, R).unsqueeze(0) for Q in Qs
         ], dim=0)
 
         c_list = []

@@ -41,19 +41,6 @@ train:
     filtering_weight: 0.1
     mean_consistency_weight: 0.05
     kl_consistency_weight: 0.0
-  cost:
-    num_updates: 2500
-    test_interval: 10
-    chunk_length: 32
-    hidden_dim: 64
-    batch_size: 256
-    lr: 5e-4
-    eps: 1e-8
-    weight_decay: 1e-6
-    clip_grad_norm: 1.0
-    disable_gpu: False
-    input_penalty: 1e-6
-    cost_radius: 5
 
 evaluation:
   num_points: 1

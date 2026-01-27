@@ -31,8 +31,8 @@ train:
   backbone:
     num_updates: 2000
     test_interval: 10
-    x_dim: 3
-    a_dim: 3
+    x_dim: 2
+    a_dim: 2
     hidden_dim: 128
     min_var: 1e-2
     chunk_length: 32
@@ -42,22 +42,10 @@ train:
     eps: 1e-8
     weight_decay: 1e-6
     clip_grad_norm: 1.0
-    disable_gpu: False
-    filtering_weight: 1.0
+    disable_gpu: True
+    filtering_weight: 0.1
     mean_consistency_weight: 0.05
     kl_consistency_weight: 0.0
-  cost:
-    num_updates: 2500
-    test_interval: 10
-    chunk_length: 32
-    batch_size: 256
-    lr: 5e-4
-    eps: 1e-8
-    weight_decay: 1e-6
-    clip_grad_norm: 1.0
-    disable_gpu: False
-    input_penalty: 1e-6
-    cost_radius: 11
 
 evaluation:
   num_points: 1
