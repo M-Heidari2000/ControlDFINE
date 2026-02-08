@@ -4,7 +4,6 @@ import einops
 import torch.nn as nn
 from tqdm import tqdm
 from omegaconf.dictconfig import DictConfig
-from torch.distributions import MultivariateNormal
 from .memory import ReplayBuffer
 from .utils import compute_consistency
 from torch.nn.utils import clip_grad_norm_
@@ -79,30 +78,24 @@ def train_backbone(
         u = torch.as_tensor(u, device=device)
         u = einops.rearrange(u, "b l u -> l b u")
 
-        # initial belief over x0: N(0, I)
-        posterior_dist = MultivariateNormal(
-            loc=torch.zeros((config.batch_size, config.x_dim), device=device),
-            covariance_matrix=torch.eye(config.x_dim, device=device).expand(config.batch_size, -1, -1)
-        )
+        priors, posteriors = dynamics_model(a=a, u=u)   # x0:T-1
         y_pred_loss = 0.0
         y_filter_loss = 0.0
         mean_consistency = 0.0
         kl_consistency = 0.0
 
-        for t in range(1, config.chunk_length - config.prediction_k):
-            prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
-            posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
-            consistencies = compute_consistency(prior=prior_dist, posterior=posterior_dist)
+        for t in range(config.chunk_length - config.prediction_k):
+            consistencies = compute_consistency(prior=priors[t], posterior=posteriors[t])
             mean_consistency += consistencies[0]
             kl_consistency += consistencies[1]
 
-            filter_a = dynamics_model.get_a(posterior_dist.loc)
+            filter_a = dynamics_model.get_a(posteriors[t].loc)
             y_filter_loss += nn.MSELoss()(decoder(filter_a), y[t])
 
             # tensors to hold predictions of future ys
             pred_y = torch.zeros((config.prediction_k, config.batch_size, train_buffer.y_dim), device=device)
 
-            pred_dist = posterior_dist
+            pred_dist = posteriors[t]
 
             for k in range(config.prediction_k):
                 pred_dist = dynamics_model.dynamics_update(dist=pred_dist, u=u[t+k])
@@ -115,11 +108,9 @@ def train_backbone(
             y_pred_loss += nn.MSELoss()(pred_y_flatten, true_y_flatten)
 
         # y prediction loss
-        y_pred_loss /= (config.chunk_length - config.prediction_k - 1)
-
+        y_pred_loss /= (config.chunk_length - config.prediction_k)
         # y filter loss
-        y_filter_loss /= (config.chunk_length - config.prediction_k - 1)
-
+        y_filter_loss /= (config.chunk_length - config.prediction_k)
         # autoencoder loss
         a_flatten = einops.rearrange(a, "l b a -> (l b) a")
         y_flatten = einops.rearrange(y, "l b y -> (l b) y")
@@ -127,8 +118,8 @@ def train_backbone(
         ae_loss = nn.MSELoss()(y_recon, y_flatten)
 
         # consistency loss
-        mean_consistency /= (config.chunk_length - config.prediction_k - 1)
-        kl_consistency /= (config.chunk_length - config.prediction_k - 1)
+        mean_consistency /= (config.chunk_length - config.prediction_k)
+        kl_consistency /= (config.chunk_length - config.prediction_k)
 
         total_loss = (
             y_pred_loss +
@@ -174,30 +165,24 @@ def train_backbone(
                 u = torch.as_tensor(u, device=device)
                 u = einops.rearrange(u, "b l u -> l b u")
 
-                # initial belief over x0: N(0, I)
-                posterior_dist = MultivariateNormal(
-                    loc=torch.zeros((config.batch_size, config.x_dim), device=device),
-                    covariance_matrix=torch.eye(config.x_dim, device=device).expand(config.batch_size, -1, -1)
-                )
+                priors, posteriors = dynamics_model(a=a, u=u)   # x0:T-1
                 y_pred_loss = 0.0
                 y_filter_loss = 0.0
                 mean_consistency = 0.0
                 kl_consistency = 0.0
 
-                for t in range(1, config.chunk_length - config.prediction_k):
-                    prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
-                    posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
-                    consistencies = compute_consistency(prior=prior_dist, posterior=posterior_dist)
+                for t in range(config.chunk_length - config.prediction_k):
+                    consistencies = compute_consistency(prior=priors[t], posterior=posteriors[t])
                     mean_consistency += consistencies[0]
                     kl_consistency += consistencies[1]
 
-                    filter_a = dynamics_model.get_a(posterior_dist.loc)
+                    filter_a = dynamics_model.get_a(posteriors[t].loc)
                     y_filter_loss += nn.MSELoss()(decoder(filter_a), y[t])
 
                     # tensors to hold predictions of future ys
                     pred_y = torch.zeros((config.prediction_k, config.batch_size, train_buffer.y_dim), device=device)
 
-                    pred_dist = posterior_dist
+                    pred_dist = posteriors[t]
 
                     for k in range(config.prediction_k):
                         pred_dist = dynamics_model.dynamics_update(dist=pred_dist, u=u[t+k])
@@ -210,10 +195,10 @@ def train_backbone(
                     y_pred_loss += nn.MSELoss()(pred_y_flatten, true_y_flatten)
 
                 # y prediction loss
-                y_pred_loss /= (config.chunk_length - config.prediction_k - 1)
+                y_pred_loss /= (config.chunk_length - config.prediction_k)
 
                 # y filter loss
-                y_filter_loss /= (config.chunk_length - config.prediction_k - 1)
+                y_filter_loss /= (config.chunk_length - config.prediction_k)
 
                 # autoencoder loss
                 a_flatten = einops.rearrange(a, "l b a -> (l b) a")
@@ -222,8 +207,8 @@ def train_backbone(
                 ae_loss = nn.MSELoss()(y_recon, y_flatten)
 
                 # consistency loss
-                mean_consistency /= (config.chunk_length - config.prediction_k - 1)
-                kl_consistency /= (config.chunk_length - config.prediction_k - 1)
+                mean_consistency /= (config.chunk_length - config.prediction_k)
+                kl_consistency /= (config.chunk_length - config.prediction_k)
 
                 total_loss = (
                     y_pred_loss +
@@ -257,7 +242,6 @@ def train_cost(
     cost_model = CostModel(
         x_dim=dynamics_model.x_dim,
         u_dim=train_buffer.u_dim,
-        input_penalty=config.input_penalty,
     ).to(device)
 
     # freeze backbone models
@@ -299,19 +283,12 @@ def train_cost(
         c = torch.as_tensor(c, device=device)
         c = einops.rearrange(c, "b l 1 -> l b 1")
 
-        # initial belief over x0: N(0, I)
-        posterior_dist = MultivariateNormal(
-            loc=torch.zeros((config.batch_size, dynamics_model.x_dim), device=device),
-            covariance_matrix=torch.eye(dynamics_model.x_dim, device=device).expand(config.batch_size, -1, -1)
-        )
-        x_means = torch.zeros((config.chunk_length, config.batch_size, dynamics_model.x_dim), device=device)
-
-        for t in range(1, config.chunk_length):
-            prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
-            posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
-            x_means[t] = posterior_dist.loc
-
-        cost_loss = cost_model.compute_window_cost(x=x_means, u=u, c=c, radius=config.cost_radius)
+        _, posteriors = dynamics_model(a=a, u=u)  # x0:T-1
+        # compute cost loss
+        cost_loss = 0.0
+        for t in range(config.chunk_length):
+            cost_loss += nn.MSELoss()(cost_model(x=posteriors[t].loc), c[t])
+        cost_loss = cost_loss / config.chunk_length
 
         optimizer.zero_grad()
         cost_loss.backward()
@@ -345,20 +322,13 @@ def train_cost(
                 c = torch.as_tensor(c, device=device)
                 c = einops.rearrange(c, "b l 1 -> l b 1")
 
-                # initial belief over x0: N(0, I)
-                posterior_dist = MultivariateNormal(
-                    loc=torch.zeros((config.batch_size, dynamics_model.x_dim), device=device),
-                    covariance_matrix=torch.eye(dynamics_model.x_dim, device=device).expand(config.batch_size, -1, -1)
-                )
-                x_means = torch.zeros((config.chunk_length, config.batch_size, dynamics_model.x_dim), device=device)
-
-                for t in range(1, config.chunk_length):
-                    prior_dist = dynamics_model.dynamics_update(dist=posterior_dist, u=u[t-1])
-                    posterior_dist = dynamics_model.measurement_update(dist=prior_dist, a=a[t])
-                    x_means[t] = posterior_dist.loc
-
-                cost_loss = cost_model.compute_window_cost(x=x_means, u=u, c=c, radius=config.cost_radius)                
-
+                _, posteriors = dynamics_model(a=a, u=u)  # x0:T-1
+                # compute cost loss
+                cost_loss = 0.0
+                for t in range(config.chunk_length):
+                    cost_loss += nn.MSELoss()(cost_model(x=posteriors[t].loc), c[t])
+                cost_loss = cost_loss / config.chunk_length
+                
                 wandb.log({
                     "test/cost loss": cost_loss.item(),
                     "global_step": update,

@@ -6,7 +6,7 @@ run_name: "DFINE"
 data:
   test_ratio: 0.2
   num_episodes: 1000
-  action_repeat: 4
+  action_repeat: 1
 
 env:
   name: swiss_roll
@@ -51,15 +51,16 @@ train:
     test_interval: 10
     chunk_length: 32
     batch_size: 256
-    lr: 5e-4
+    lr: 3e-3
     eps: 1e-8
     weight_decay: 1e-6
     clip_grad_norm: 1.0
-    disable_gpu: False
-    input_penalty: 1e-6
-    cost_radius: 11
+    disable_gpu: True
 
 evaluation:
   num_points: 1
   num_regions: 1
   planning_horizon: 8
+  num_iterations: 10
+  num_candidates: 1000
+  num_elites: 100

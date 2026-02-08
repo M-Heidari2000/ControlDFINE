@@ -14,7 +14,7 @@ class Torus(gym.Env):
     y_dim = 3
     u_dim = 2
     radius1 = 1  # Minor radius (tube radius)
-    radius2 = 2  # Major radius (distance from center to tube center)
+    radius2 = 4  # Major radius (distance from center to tube center)
 
     def __init__(
         self,

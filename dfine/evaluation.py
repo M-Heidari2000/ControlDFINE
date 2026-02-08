@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import gymnasium as gym
-from .agents import IMPCAgent, OracleMPC
+from .agents import CEMAgent, OracleMPC
 from omegaconf.dictconfig import DictConfig
 from .models import Dynamics, Encoder
 from .utils import make_grid
@@ -11,7 +11,7 @@ from .train import train_cost
 
 def trial(
     env: gym.Env,
-    agent: IMPCAgent,
+    agent: CEMAgent,
     oracle: OracleMPC,
     target: np.ndarray,
 ):
@@ -41,7 +41,7 @@ def trial(
     # control with the learned model
     obs, _ = env.reset(options=options)
     agent.reset()
-    action = env.action_space.sample()
+    action = None
     done = False
     total_cost = 0.0
     while not done:
@@ -88,17 +88,20 @@ def evaluate(
                 test_buffer=test_buffer,
             )
             # create agent
-            agent = IMPCAgent(
+            agent = CEMAgent(
                 encoder=encoder,
                 dynamics_model=dynamics_model,
                 cost_model=cost_model,
                 planning_horizon=eval_config.planning_horizon,
+                num_iterations=eval_config.num_iterations,
+                num_candidates=eval_config.num_candidates,
+                num_elites=eval_config.num_elites,
             )
 
             # create oracle
             device = next(cost_model.parameters()).device
             Q = torch.eye(env.state_space.shape[0], device=device)
-            R = cost_model.R
+            R = torch.eye(env.action_space.shape[0], device=device) * 1e-6
             q = -torch.as_tensor(sample, device=device).reshape(1, -1) @ Q
             A=torch.as_tensor(env.A, device=device)
             B=torch.as_tensor(env.B, device=device)
