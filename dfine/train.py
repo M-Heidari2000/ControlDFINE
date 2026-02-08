@@ -98,7 +98,7 @@ def train_backbone(
             pred_dist = posteriors[t]
 
             for k in range(config.prediction_k):
-                pred_dist = dynamics_model.dynamics_update(dist=pred_dist, u=u[t+k])
+                pred_dist = dynamics_model.prior(dist=pred_dist, u=u[t+k])
                 pred_a = dynamics_model.get_a(pred_dist.loc)
                 pred_y[k] = decoder(pred_a)
 
@@ -185,7 +185,7 @@ def train_backbone(
                     pred_dist = posteriors[t]
 
                     for k in range(config.prediction_k):
-                        pred_dist = dynamics_model.dynamics_update(dist=pred_dist, u=u[t+k])
+                        pred_dist = dynamics_model.prior(dist=pred_dist, u=u[t+k])
                         pred_a = dynamics_model.get_a(pred_dist.loc)
                         pred_y[k] = decoder(pred_a)
 
