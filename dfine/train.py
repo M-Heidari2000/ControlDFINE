@@ -239,10 +239,7 @@ def train_cost(
 ):
     device = "cuda" if (torch.cuda.is_available() and not config.disable_gpu) else "cpu"
 
-    cost_model = CostModel(
-        x_dim=dynamics_model.x_dim,
-        u_dim=train_buffer.u_dim,
-    ).to(device)
+    cost_model = CostModel(x_dim=dynamics_model.x_dim).to(device)
 
     # freeze backbone models
     for p in encoder.parameters():
