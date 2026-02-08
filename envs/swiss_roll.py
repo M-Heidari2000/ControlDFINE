@@ -41,8 +41,8 @@ class SwissRoll(gym.Env):
         self.periodic = periodic
 
         self.state_space = spaces.Box(
-            low=np.array([0.0, -np.pi]),
-            high=np.array([4*np.pi, np.pi]),
+            low=np.array([-2*np.pi, -np.pi]),
+            high=np.array([2*np.pi, np.pi]),
             shape=(2, ),
             dtype=np.float32,
         )
@@ -71,6 +71,8 @@ class SwissRoll(gym.Env):
 
     def manifold(self, s: np.ndarray):
         assert s.shape[1] == self.x_dim
+        s = s.copy()
+        s[:, 0] = s[:, 0] + 2 * np.pi
         x = s[:, 0] * np.cos(s[:, 0]) / 2
         y = s[:, 1]
         z = s[:, 0] * np.sin(s[:, 0]) / 2
