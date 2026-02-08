@@ -36,8 +36,8 @@ class CEMAgent:
 
         # Initialize belief with zeros
         self.dist = MultivariateNormal(
-            loc=torch.zeros((1, self.x_dim), device=self.device),
-            covariance_matrix=torch.eye(self.x_dim, device=self.device),
+            loc=torch.zeros((1, self.dynamics_model.x_dim), device=self.device),
+            covariance_matrix=torch.eye(self.dynamics_model.x_dim, device=self.device),
         )
 
     def __call__(self, y: torch.Tensor, u: Optional[torch.Tensor], explore: bool=False):
@@ -96,8 +96,8 @@ class CEMAgent:
     def reset(self):
         # Initialize belief with zeros
         self.dist = MultivariateNormal(
-            loc=torch.zeros((1, self.x_dim), device=self.device),
-            covariance_matrix=torch.eye(self.x_dim, device=self.device),
+            loc=torch.zeros((1, self.dynamics_model.x_dim), device=self.device),
+            covariance_matrix=torch.eye(self.dynamics_model.x_dim, device=self.device),
         )
         
 
