@@ -26,7 +26,7 @@ def trial(
     # control with oracle
     obs, info = env.reset(options=options)
     done = False
-    oracle_cost = 0.0
+    oracle_cost = np.array(0.0)
     while not done:
         x = torch.as_tensor(info["state"], device=oracle.device).unsqueeze(0)
         planned_actions = oracle(x=x)
@@ -43,7 +43,7 @@ def trial(
     agent.reset()
     action = None
     done = False
-    total_cost = 0.0
+    total_cost = np.array(0.0)
     while not done:
         planned_actions = agent(y=obs, u=action, explore=False)
         action = planned_actions[0].flatten()
