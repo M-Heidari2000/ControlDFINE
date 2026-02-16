@@ -41,8 +41,8 @@ class SwissRoll(gym.Env):
         self.periodic = periodic
 
         self.state_space = spaces.Box(
-            low=np.array([-2*np.pi, -np.pi]),
-            high=np.array([2*np.pi, np.pi]),
+            low=np.array([-2*np.pi, -2*np.pi]),
+            high=np.array([2*np.pi, 2*np.pi]),
             shape=(2, ),
             dtype=np.float32,
         )
