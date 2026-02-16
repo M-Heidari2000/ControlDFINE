@@ -1,7 +1,6 @@
-import torch
 import numpy as np
 import gymnasium as gym
-from .agents import CEMAgent, OracleMPC
+from .agents import CEMAgent
 from omegaconf.dictconfig import DictConfig
 from .models import Dynamics, Encoder
 from .utils import make_grid
@@ -12,7 +11,6 @@ from .train import train_cost
 def trial(
     env: gym.Env,
     agent: CEMAgent,
-    oracle: OracleMPC,
     target: np.ndarray,
 ):
     # initialize the environment in the middle of the state space
@@ -22,21 +20,6 @@ def trial(
         "initial_state": initial_state,
         "target_state": target,
     }
-
-    # control with oracle
-    obs, info = env.reset(options=options)
-    done = False
-    oracle_cost = np.array(0.0)
-    while not done:
-        x = torch.as_tensor(info["state"], device=oracle.device).unsqueeze(0)
-        planned_actions = oracle(x=x)
-        action = planned_actions[0].flatten()
-        obs, _, terminated, truncated, info = env.step(action=action)
-        if terminated:
-            oracle_cost += np.inf
-        else:
-            oracle_cost += np.linalg.norm(obs - obs_target) ** 2
-        done = terminated or truncated
 
     # control with the learned model
     obs, _ = env.reset(options=options)
@@ -54,7 +37,7 @@ def trial(
             total_cost += np.linalg.norm(obs - obs_target) ** 2
         done = terminated or truncated
 
-    return total_cost.item() / oracle_cost.item()
+    return total_cost.item()
 
 
 def evaluate(
@@ -97,18 +80,8 @@ def evaluate(
                 num_candidates=eval_config.num_candidates,
                 num_elites=eval_config.num_elites,
             )
-
-            # create oracle
-            device = next(cost_model.parameters()).device
-            Q = torch.eye(env.state_space.shape[0], device=device)
-            R = torch.eye(env.action_space.shape[0], device=device) * 1e-6
-            q = -torch.as_tensor(sample, device=device).reshape(1, -1) @ Q
-            A=torch.as_tensor(env.A, device=device)
-            B=torch.as_tensor(env.B, device=device)
-            oracle = OracleMPC(Q=Q, R=R, q=q, A=A, B=B)
-
             # get a trial
-            trial_cost = trial(env=env, agent=agent, oracle=oracle, target=sample)
+            trial_cost = trial(env=env, agent=agent, target=sample)
             costs.append(trial_cost)
         
         region["costs"] = np.array(costs)
