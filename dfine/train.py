@@ -87,7 +87,7 @@ def train_backbone(
         kl_consistency = 0.0
 
         for t in range(config.chunk_length - config.prediction_k):
-            consistencies = compute_consistency(prior=priors[t], posterior=posteriors[t])
+            consistencies = compute_consistency(prior=priors[t], posterior=posteriors[t], free_nats=config.kl_free_nats)
             mean_consistency += consistencies[0]
             kl_consistency += consistencies[1]
 

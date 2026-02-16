@@ -47,6 +47,7 @@ train:
     filtering_weight: 1.0
     mean_consistency_weight: 0.05
     kl_consistency_weight: 0.0
+    kl_free_nats: 3.0
   cost:
     num_updates: 2500
     test_interval: 10

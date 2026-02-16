@@ -26,6 +26,7 @@ def pearson_corr(
 def compute_consistency(
     prior: MultivariateNormal,
     posterior: MultivariateNormal,
+    free_nats: float=3.0,
 ):
     prior_mean = prior.loc
     posterior_mean = posterior.loc
@@ -33,7 +34,7 @@ def compute_consistency(
         2 * (prior_mean - posterior_mean).norm(dim=1, p=2) /
         (prior_mean.norm(dim=1, p=2) + posterior_mean.norm(dim=1, p=2)  + 1e-6)
     ).mean()
-    kl_consistency = kl_divergence(posterior, prior).mean()
+    kl_consistency = kl_divergence(posterior, prior).clamp(min=free_nats).mean()
 
     return mean_consistency, kl_consistency
 
