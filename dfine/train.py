@@ -107,7 +107,7 @@ def train_backbone(
             pred_a = dynamics_model.get_a(pred_dist.loc)
             pred_y = decoder(pred_a)
             true_y = einops.rearrange(y[k:config.chunk_length], "l b y -> (l b) y")
-            y_pred_loss += nn.MSELoss()(pred_y, true_y)
+            y_pred_loss += nn.MSELoss()(pred_y, true_y) * (config.chunk_length - k) / config.chunk_length
 
         # y prediction loss
         y_pred_loss /= config.prediction_k
@@ -188,7 +188,7 @@ def train_backbone(
                     pred_a = dynamics_model.get_a(pred_dist.loc)
                     pred_y = decoder(pred_a)
                     true_y = einops.rearrange(y[k:config.chunk_length], "l b y -> (l b) y")
-                    y_pred_loss += nn.MSELoss()(pred_y, true_y)
+                    y_pred_loss += nn.MSELoss()(pred_y, true_y) * (config.chunk_length - k) / config.chunk_length
 
                 # y prediction loss
                 y_pred_loss /= config.prediction_k
