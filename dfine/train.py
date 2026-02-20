@@ -81,7 +81,6 @@ def train_backbone(
         u = einops.rearrange(u, "b l u -> l b u")
 
         priors, posteriors = dynamics_model(a=a, u=u)   # x0:T-1
-        y_pred_loss = 0.0
 
         consistencies = compute_consistency(
             prior=bottle_mvn(priors),
@@ -97,25 +96,21 @@ def train_backbone(
             einops.rearrange(y, "l b y -> (l b) y")
         )
 
-        for t in range(config.chunk_length - config.prediction_k):
-
-            # tensors to hold predictions of future ys
-            pred_y = torch.zeros((config.prediction_k, config.batch_size, train_buffer.y_dim), device=device)
-
-            pred_dist = posteriors[t]
-
-            for k in range(config.prediction_k):
-                pred_dist = dynamics_model.prior(dist=pred_dist, u=u[t+k])
-                pred_a = dynamics_model.get_a(pred_dist.loc)
-                pred_y[k] = decoder(pred_a)
-
-            true_y = y[t+1: t+1+config.prediction_k]
-            true_y_flatten = einops.rearrange(true_y, "k b y -> (k b) y")
-            pred_y_flatten = einops.rearrange(pred_y, "k b y -> (k b) y")
-            y_pred_loss += nn.MSELoss()(pred_y_flatten, true_y_flatten)
+        y_pred_loss = 0.0
+        for k in range(1, config.prediction_k+1):
+            pred_dist = bottle_mvn(posteriors[k:config.chunk_length-k])
+            for t in range(k):
+                pred_dist = dynamics_model.prior(
+                    dist=pred_dist,
+                    u=einops.rearrange(u[t:config.chunk_length-k+t], "l b u -> (l b) u"),
+                )
+            pred_a = dynamics_model.get_a(pred_dist.loc)
+            pred_y = decoder(pred_a)
+            true_y = einops.rearrange(y[k:config.chunk_length], "l b y -> (l b) y")
+            y_pred_loss += nn.MSELoss()(pred_y, true_y)
 
         # y prediction loss
-        y_pred_loss /= (config.chunk_length - config.prediction_k)
+        y_pred_loss /= config.prediction_k
         # autoencoder loss
         a_flatten = einops.rearrange(a, "l b a -> (l b) a")
         y_flatten = einops.rearrange(y, "l b y -> (l b) y")
@@ -167,7 +162,6 @@ def train_backbone(
                 u = einops.rearrange(u, "b l u -> l b u")
 
                 priors, posteriors = dynamics_model(a=a, u=u)   # x0:T-1
-                y_pred_loss = 0.0
                 
                 consistencies = compute_consistency(
                     prior=bottle_mvn(priors),
@@ -183,25 +177,21 @@ def train_backbone(
                     einops.rearrange(y, "l b y -> (l b) y")
                 )
 
-                for t in range(config.chunk_length - config.prediction_k):
-
-                    # tensors to hold predictions of future ys
-                    pred_y = torch.zeros((config.prediction_k, config.batch_size, train_buffer.y_dim), device=device)
-
-                    pred_dist = posteriors[t]
-
-                    for k in range(config.prediction_k):
-                        pred_dist = dynamics_model.prior(dist=pred_dist, u=u[t+k])
-                        pred_a = dynamics_model.get_a(pred_dist.loc)
-                        pred_y[k] = decoder(pred_a)
-
-                    true_y = y[t+1: t+1+config.prediction_k]
-                    true_y_flatten = einops.rearrange(true_y, "k b y -> (k b) y")
-                    pred_y_flatten = einops.rearrange(pred_y, "k b y -> (k b) y")
-                    y_pred_loss += nn.MSELoss()(pred_y_flatten, true_y_flatten)
+                y_pred_loss = 0.0
+                for k in range(1, config.prediction_k+1):
+                    pred_dist = bottle_mvn(posteriors[k:config.chunk_length-k])
+                    for t in range(k):
+                        pred_dist = dynamics_model.prior(
+                            dist=pred_dist,
+                            u=einops.rearrange(u[t:config.chunk_length-k+t], "l b u -> (l b) u"),
+                        )
+                    pred_a = dynamics_model.get_a(pred_dist.loc)
+                    pred_y = decoder(pred_a)
+                    true_y = einops.rearrange(y[k:config.chunk_length], "l b y -> (l b) y")
+                    y_pred_loss += nn.MSELoss()(pred_y, true_y)
 
                 # y prediction loss
-                y_pred_loss /= (config.chunk_length - config.prediction_k)
+                y_pred_loss /= config.prediction_k
 
                 # autoencoder loss
                 a_flatten = einops.rearrange(a, "l b a -> (l b) a")
