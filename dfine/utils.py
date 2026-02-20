@@ -5,6 +5,16 @@ from torch.distributions import kl_divergence
 from torch.distributions import MultivariateNormal
 
 
+def bottle_mvn(dists: List[MultivariateNormal]):
+    """
+        concatenates a list of distributions along the batch dimension
+    """
+    mean = torch.cat([d.loc for d in dists], dim=0)
+    cov = torch.cat([d.covariance_matrix for d in dists], dim=0)
+
+    return MultivariateNormal(loc=mean, covariance_matrix=cov)
+
+
 def pearson_corr(
     true: torch.Tensor,
     pred: torch.Tensor

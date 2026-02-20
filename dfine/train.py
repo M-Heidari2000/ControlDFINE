@@ -5,7 +5,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from omegaconf.dictconfig import DictConfig
 from .memory import ReplayBuffer
-from .utils import compute_consistency
+from .utils import compute_consistency, bottle_mvn
 from torch.nn.utils import clip_grad_norm_
 from .models import (
     Encoder,
@@ -83,13 +83,16 @@ def train_backbone(
         priors, posteriors = dynamics_model(a=a, u=u)   # x0:T-1
         y_pred_loss = 0.0
         y_filter_loss = 0.0
-        mean_consistency = 0.0
-        kl_consistency = 0.0
+
+        consistencies = compute_consistency(
+            prior=bottle_mvn(priors),
+            posterior=bottle_mvn(posteriors),
+            free_nats=config.kl_free_nats
+        )
+        mean_consistency = consistencies[0]
+        kl_consistency = consistencies[1]
 
         for t in range(config.chunk_length - config.prediction_k):
-            consistencies = compute_consistency(prior=priors[t], posterior=posteriors[t], free_nats=config.kl_free_nats)
-            mean_consistency += consistencies[0]
-            kl_consistency += consistencies[1]
 
             filter_a = dynamics_model.get_a(posteriors[t].loc)
             y_filter_loss += nn.MSELoss()(decoder(filter_a), y[t])
@@ -118,10 +121,6 @@ def train_backbone(
         y_flatten = einops.rearrange(y, "l b y -> (l b) y")
         y_recon = decoder(a_flatten)
         ae_loss = nn.MSELoss()(y_recon, y_flatten)
-
-        # consistency loss
-        mean_consistency /= (config.chunk_length - config.prediction_k)
-        kl_consistency /= (config.chunk_length - config.prediction_k)
 
         total_loss = (
             y_pred_loss +
@@ -170,13 +169,16 @@ def train_backbone(
                 priors, posteriors = dynamics_model(a=a, u=u)   # x0:T-1
                 y_pred_loss = 0.0
                 y_filter_loss = 0.0
-                mean_consistency = 0.0
-                kl_consistency = 0.0
+                
+                consistencies = compute_consistency(
+                    prior=bottle_mvn(priors),
+                    posterior=bottle_mvn(posteriors),
+                    free_nats=config.kl_free_nats
+                )
+                mean_consistency = consistencies[0]
+                kl_consistency = consistencies[1]
 
                 for t in range(config.chunk_length - config.prediction_k):
-                    consistencies = compute_consistency(prior=priors[t], posterior=posteriors[t], free_nats=config.kl_free_nats)
-                    mean_consistency += consistencies[0]
-                    kl_consistency += consistencies[1]
 
                     filter_a = dynamics_model.get_a(posteriors[t].loc)
                     y_filter_loss += nn.MSELoss()(decoder(filter_a), y[t])
@@ -207,10 +209,6 @@ def train_backbone(
                 y_flatten = einops.rearrange(y, "l b y -> (l b) y")
                 y_recon = decoder(a_flatten)
                 ae_loss = nn.MSELoss()(y_recon, y_flatten)
-
-                # consistency loss
-                mean_consistency /= (config.chunk_length - config.prediction_k)
-                kl_consistency /= (config.chunk_length - config.prediction_k)
 
                 total_loss = (
                     y_pred_loss +
@@ -284,11 +282,10 @@ def train_cost(
 
         _, posteriors = dynamics_model(a=a, u=u)  # x0:T-1
         # compute cost loss
-        cost_loss = 0.0
-        for t in range(config.chunk_length):
-            cost_loss += nn.MSELoss()(cost_model(x=posteriors[t].loc), c[t])
-        cost_loss = cost_loss / config.chunk_length
-
+        cost_loss = nn.MSELoss()(
+            cost_model(x=bottle_mvn(posteriors).loc),
+            einops.rearrange(c, "l b 1 -> (l b) 1")
+        )
         optimizer.zero_grad()
         cost_loss.backward()
 
@@ -323,10 +320,10 @@ def train_cost(
 
                 _, posteriors = dynamics_model(a=a, u=u)  # x0:T-1
                 # compute cost loss
-                cost_loss = 0.0
-                for t in range(config.chunk_length):
-                    cost_loss += nn.MSELoss()(cost_model(x=posteriors[t].loc), c[t])
-                cost_loss = cost_loss / config.chunk_length
+                cost_loss = nn.MSELoss()(
+                    cost_model(x=bottle_mvn(posteriors).loc),
+                    einops.rearrange(c, "l b 1 -> (l b) 1")
+                )
                 
                 wandb.log({
                     "test/cost loss": cost_loss.item(),
