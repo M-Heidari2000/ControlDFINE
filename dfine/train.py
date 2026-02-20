@@ -82,7 +82,6 @@ def train_backbone(
 
         priors, posteriors = dynamics_model(a=a, u=u)   # x0:T-1
         y_pred_loss = 0.0
-        y_filter_loss = 0.0
 
         consistencies = compute_consistency(
             prior=bottle_mvn(priors),
@@ -92,10 +91,13 @@ def train_backbone(
         mean_consistency = consistencies[0]
         kl_consistency = consistencies[1]
 
-        for t in range(config.chunk_length - config.prediction_k):
+        filter_a = dynamics_model.get_a(bottle_mvn(posteriors).loc)
+        y_filter_loss = nn.MSELoss()(
+            decoder(filter_a),
+            einops.rearrange(y, "l b y -> (l b) y")
+        )
 
-            filter_a = dynamics_model.get_a(posteriors[t].loc)
-            y_filter_loss += nn.MSELoss()(decoder(filter_a), y[t])
+        for t in range(config.chunk_length - config.prediction_k):
 
             # tensors to hold predictions of future ys
             pred_y = torch.zeros((config.prediction_k, config.batch_size, train_buffer.y_dim), device=device)
@@ -114,8 +116,6 @@ def train_backbone(
 
         # y prediction loss
         y_pred_loss /= (config.chunk_length - config.prediction_k)
-        # y filter loss
-        y_filter_loss /= (config.chunk_length - config.prediction_k)
         # autoencoder loss
         a_flatten = einops.rearrange(a, "l b a -> (l b) a")
         y_flatten = einops.rearrange(y, "l b y -> (l b) y")
@@ -168,7 +168,6 @@ def train_backbone(
 
                 priors, posteriors = dynamics_model(a=a, u=u)   # x0:T-1
                 y_pred_loss = 0.0
-                y_filter_loss = 0.0
                 
                 consistencies = compute_consistency(
                     prior=bottle_mvn(priors),
@@ -178,10 +177,13 @@ def train_backbone(
                 mean_consistency = consistencies[0]
                 kl_consistency = consistencies[1]
 
-                for t in range(config.chunk_length - config.prediction_k):
+                filter_a = dynamics_model.get_a(bottle_mvn(posteriors).loc)
+                y_filter_loss = nn.MSELoss()(
+                    decoder(filter_a),
+                    einops.rearrange(y, "l b y -> (l b) y")
+                )
 
-                    filter_a = dynamics_model.get_a(posteriors[t].loc)
-                    y_filter_loss += nn.MSELoss()(decoder(filter_a), y[t])
+                for t in range(config.chunk_length - config.prediction_k):
 
                     # tensors to hold predictions of future ys
                     pred_y = torch.zeros((config.prediction_k, config.batch_size, train_buffer.y_dim), device=device)
@@ -200,9 +202,6 @@ def train_backbone(
 
                 # y prediction loss
                 y_pred_loss /= (config.chunk_length - config.prediction_k)
-
-                # y filter loss
-                y_filter_loss /= (config.chunk_length - config.prediction_k)
 
                 # autoencoder loss
                 a_flatten = einops.rearrange(a, "l b a -> (l b) a")
