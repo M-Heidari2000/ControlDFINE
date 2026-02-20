@@ -98,7 +98,7 @@ def train_backbone(
 
         y_pred_loss = 0.0
         for k in range(1, config.prediction_k+1):
-            pred_dist = bottle_mvn(posteriors[k:config.chunk_length-k])
+            pred_dist = bottle_mvn(posteriors[0:config.chunk_length-k])
             for t in range(k):
                 pred_dist = dynamics_model.prior(
                     dist=pred_dist,
@@ -179,7 +179,7 @@ def train_backbone(
 
                 y_pred_loss = 0.0
                 for k in range(1, config.prediction_k+1):
-                    pred_dist = bottle_mvn(posteriors[k:config.chunk_length-k])
+                    pred_dist = bottle_mvn(posteriors[0:config.chunk_length-k])
                     for t in range(k):
                         pred_dist = dynamics_model.prior(
                             dist=pred_dist,
