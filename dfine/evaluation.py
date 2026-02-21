@@ -26,18 +26,21 @@ def trial(
     agent.reset()
     action = None
     done = False
+    initial_cost = np.linalg.norm(obs - obs_target) ** 2
+    steps = 0
     total_cost = np.array(0.0)
     while not done:
         planned_actions = agent(y=obs, u=action, explore=False)
         action = planned_actions[0].flatten()
         obs, _, terminated, truncated, _ = env.step(action=action)
+        steps += 1
         if terminated:
             total_cost += np.inf
         else:
             total_cost += np.linalg.norm(obs - obs_target) ** 2
         done = terminated or truncated
 
-    return total_cost.item()
+    return total_cost.item() / (initial_cost.item() * steps)
 
 
 def evaluate(
@@ -54,6 +57,7 @@ def evaluate(
         high=env.state_space.high,
         num_regions=eval_config.num_regions,
         num_points=eval_config.num_points,
+        deterministic=eval_config.deterministic,
     )
 
     for region in target_regions:

@@ -58,6 +58,7 @@ train:
 evaluation:
   num_points: 1
   num_regions: 1
+  deterministic: True
   planning_horizon: 8
   num_iterations: 10
   num_candidates: 1000

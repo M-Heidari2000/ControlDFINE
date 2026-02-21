@@ -58,6 +58,7 @@ evaluation:
   num_points: 1
   num_regions: 1
   planning_horizon: 8
+  deterministic: True
   num_iterations: 10
   num_candidates: 1000
   num_elites: 100
