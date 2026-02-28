@@ -82,7 +82,6 @@ class MPCAgent:
         return np.clip(planned_u.cpu().numpy(), a_min=-1.0, a_max=1.0)
 
     def _plan(self):
-
         _, planned_u, _ = self.planner(self.dist.loc, self.quadcost, self.lindx)
 
         return planned_u.squeeze(1)
