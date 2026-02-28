@@ -46,26 +46,30 @@ class Decoder(nn.Module):
 
 
 class CostModel(nn.Module):
-    """
-        x_t -> c_t
-    """
-
-    def __init__(self, x_dim: int, hidden_dim: Optional[int]=64):
-        
+    def __init__(self, x_dim: int, u_dim: int):
+        """
+            Learnable quadratic cost function
+        """
         super().__init__()
 
-        self.mlp_layers = nn.Sequential(
-            nn.Linear(x_dim, hidden_dim),
-            nn.ELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ELU(),
-            nn.Linear(hidden_dim, 1),
-            nn.Softplus(),
-        )
+        self.x_dim = x_dim
+        self.u_dim = u_dim
+        self.A = nn.Parameter(torch.eye(self.x_dim, dtype=torch.float32))
+        self.q = nn.Parameter(torch.randn((1, self.x_dim), dtype=torch.float32))
+        self.register_buffer("R", 1e-6 * torch.eye(self.u_dim, dtype=torch.float32))
 
-    def forward(self, x: torch.Tensor):
-        return self.mlp_layers(x)
 
+    @property
+    def Q(self):
+        return self.A @ self.A.T
+
+    def forward(self, x: torch.Tensor, u: torch.Tensor):
+        res = x - self.q
+        xQx = torch.einsum("bi,ij,bj->b", res, self.Q, res)
+        uRu = torch.einsum("bi,ij,bj->b", u, self.R, u)
+        cost = 0.5 * (xQx + uRu).reshape(-1, 1)
+        return cost
+    
 
 class Dynamics(nn.Module):
     
