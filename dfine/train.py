@@ -313,7 +313,7 @@ def train_cost(
                 _, posteriors = dynamics_model(a=a, u=u)  # x0:T-1
                 # compute cost loss
                 cost_loss = nn.MSELoss()(
-                    cost_model(x=bottle_mvn(posteriors).loc),
+                    cost_model(x=bottle_mvn(posteriors).loc, u=einops.rearrange(u, "l b u -> (l b) u")),
                     einops.rearrange(c, "l b 1 -> (l b) 1")
                 )
                 
