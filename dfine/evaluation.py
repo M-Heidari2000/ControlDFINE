@@ -98,8 +98,8 @@ def evaluate(
             Q = torch.eye(env.state_space.shape[0], device=device)
             R = torch.eye(env.action_space.shape[0], device=device) * 1e-6
             q = torch.as_tensor(sample, device=device).reshape(1, -1)
-            A=torch.as_tensor(env.A, device=device)
-            B=torch.as_tensor(env.B, device=device)
+            A = torch.as_tensor(env.A, device=device)
+            B = torch.as_tensor(env.B, device=device)
             oracle = OracleMPC(Q=Q, R=R, q=q, A=A, B=B)
 
             # get a trial

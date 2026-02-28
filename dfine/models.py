@@ -58,7 +58,6 @@ class CostModel(nn.Module):
         self.q = nn.Parameter(torch.randn((1, self.x_dim), dtype=torch.float32))
         self.register_buffer("R", 1e-6 * torch.eye(self.u_dim, dtype=torch.float32))
 
-
     @property
     def Q(self):
         return self.A @ self.A.T
