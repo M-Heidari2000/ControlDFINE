@@ -70,6 +70,7 @@ def evaluate(
         high=env.state_space.high,
         num_regions=eval_config.num_regions,
         num_points=eval_config.num_points,
+        deterministic=eval_config.deterministic,
     )
 
     for region in target_regions:
