@@ -83,7 +83,7 @@ class MPCAgent:
 
     def _plan(self):
 
-        _, planned_u = self.planner(self.dist.loc, self.quadcost, self.lindx)
+        _, planned_u, _ = self.planner(self.dist.loc, self.quadcost, self.lindx)
 
         return planned_u.squeeze(1)
 
