@@ -16,12 +16,14 @@ class ReplayBuffer:
             capacity=dataset.total_steps,
             y_dim=dataset.observation_space.shape[0],
             u_dim=dataset.action_space.shape[0],
+            x_dim=dataset[0].infos["state"].shape[1],
         )
         for episode in tqdm(dataset):
             steps = episode.actions.shape[0]
             for i in range(steps):
                 buffer.push(
                     y=episode.observations[i],
+                    x=episode.infos["state"][i],
                     u=episode.actions[i],
                     c=-episode.rewards[i],
                     done=episode.terminations[i] or episode.truncations[i],
@@ -33,13 +35,16 @@ class ReplayBuffer:
         capacity: int,
         y_dim: int,
         u_dim: int,
+        x_dim: int,
     ):
         self.capacity = capacity
 
         self.y_dim = y_dim
         self.u_dim = u_dim
+        self.x_dim = x_dim
 
         self.ys = np.zeros((capacity, y_dim), dtype=np.float32)
+        self.xs = np.zeros((capacity, x_dim), dtype=np.float32)
         self.us = np.zeros((capacity, u_dim), dtype=np.float32)
         self.cs = np.zeros((capacity, 1), dtype=np.float32)
         self.done = np.zeros((capacity, 1), dtype=bool)
@@ -53,6 +58,7 @@ class ReplayBuffer:
     def push(
         self,
         y,
+        x,
         u,
         c,
         done,
@@ -61,6 +67,7 @@ class ReplayBuffer:
             Add experience (single step) to the replay buffer
         """
         self.ys[self.index] = y
+        self.xs[self.index] = x
         self.us[self.index] = u
         self.cs[self.index] = c
         self.done[self.index] = done
@@ -102,8 +109,8 @@ class ReplayBuffer:
         return sampled_ys, sampled_us, sampled_cs, sampled_done
     
     
-    def map_costs(self, obs_target: np.ndarray) -> ReplayBuffer:
-        obs_target = obs_target.astype(np.float32).reshape(1, -1)
+    def map_costs(self, target: np.ndarray) -> ReplayBuffer:
+        target = target.astype(np.float32).reshape(1, -1)
         new_buffer = copy.deepcopy(self)
-        new_buffer.cs = np.linalg.norm(new_buffer.ys - obs_target, axis=1, keepdims=True) ** 2
+        new_buffer.cs = np.linalg.norm(new_buffer.xs - target, axis=1, keepdims=True) ** 2
         return new_buffer
