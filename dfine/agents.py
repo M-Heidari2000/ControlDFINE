@@ -1,14 +1,15 @@
 import torch
-import einops
-from typing import Optional
 import numpy as np
+from mpc import mpc
+from mpc.mpc import QuadCost, LinDx
+from typing import Optional
 from torch.distributions import MultivariateNormal
 from .models import Encoder, Dynamics, CostModel
 
 
-class CEMAgent:
+class MPCAgent:
     """
-        action planning by the Cross Entropy Method (CEM)
+        action planning by the MPC method
     """
     def __init__(
         self,
@@ -16,21 +17,39 @@ class CEMAgent:
         dynamics_model: Dynamics,
         cost_model: CostModel,
         planning_horizon: int,
-        num_iterations: int = 10,
-        num_candidates: int = 100,
-        num_elites: int = 10,
         action_noise: float = 0.3,
     ):
         self.encoder = encoder
         self.dynamics_model = dynamics_model
         self.cost_model = cost_model
-        self.num_iterations = num_iterations
-        self.num_candidates = num_candidates
-        self.num_elites = num_elites
         self.planning_horizon = planning_horizon
         self.action_noise = action_noise
 
         self.device = next(encoder.parameters()).device
+
+        # MPC matrices
+        C = torch.block_diag(self.cost_model.Q, self.cost_model.R).expand(self.planning_horizon, 1, -1, -1)
+        c = torch.cat([
+            self.cost_model.q @ self.cost_model.Q,
+            torch.zeros((1, self.cost_model.u_dim), device=self.device)
+        ], dim=1).expand(self.planning_horizon, -1, -1)
+        F = torch.cat((self.dynamics_model.A, self.dynamics_model.B), dim=1).expand(self.planning_horizon, 1, -1, -1)
+        f = torch.zeros((1, self.cost_model.x_dim), device=self.device).expand(self.planning_horizon, -1, -1)
+
+        self.quadcost = QuadCost(C, c)
+        self.lindx = LinDx(F, f)
+
+        self.planner = mpc.MPC(
+            n_batch=1,
+            n_state=self.cost_model.x_dim,
+            n_ctrl=self.cost_model.u_dim,
+            T=self.planning_horizon,
+            u_lower=-1.0,
+            u_upper=1.0,
+            lqr_iter=50,
+            backprop=False,
+            exit_unconverged=False,
+        )
 
         # Initialize belief with zeros
         self.dist = MultivariateNormal(
@@ -62,33 +81,10 @@ class CEMAgent:
         return np.clip(planned_u.cpu().numpy(), a_min=-1.0, a_max=1.0)
 
     def _plan(self):
-        action_dist = MultivariateNormal(
-            loc=torch.zeros((self.planning_horizon, self.dynamics_model.u_dim), device=self.device),
-            covariance_matrix=torch.eye(self.dynamics_model.u_dim, device=self.device).expand([self.planning_horizon, -1, -1])
-        )
-        dist = MultivariateNormal(
-            loc=self.dist.loc.expand(self.num_candidates, -1),
-            covariance_matrix=self.dist.covariance_matrix.expand(self.num_candidates, -1, -1),
-        )
 
-        for _ in range(self.num_iterations):
-            action_candidates = action_dist.sample([self.num_candidates])
-            action_candidates = einops.rearrange(action_candidates, "n h u -> h n u")
-            action_candidates = action_candidates.clamp(min=-1.0, max=1.0)
-            prior_samples = self.dynamics_model.generate(dist=dist, u=action_candidates)
-            total_predicted_cost = torch.zeros(self.num_candidates, device=self.device)
-            for t in range(self.planning_horizon):
-                total_predicted_cost += self.cost_model(x=prior_samples[t]).squeeze()
-            # find the elite sequences
-            elite_indexes = total_predicted_cost.argsort(descending=False)[:self.num_elites]
-            elites = action_candidates[:, elite_indexes, :]
+        _, planned_u = self.planner(self.dist.loc, self.quadcost, self.lindx)
 
-            # fit a new distribution on the elites
-            mean = elites.mean(dim=1)
-            cov = torch.diag_embed(elites.var(dim=1, unbiased=False) + 1e-4)
-            action_dist = MultivariateNormal(loc=mean, covariance_matrix=cov)
-
-        return action_dist.loc
+        return planned_u.squeeze(1)
 
 
     def reset(self):
