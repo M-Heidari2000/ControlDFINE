@@ -42,6 +42,7 @@ def train_backbone(
         a_dim=config.a_dim,
         hidden_dim=config.hidden_dim,
         min_var=config.min_var,
+        max_var=config.max_var,
         locally_linear=config.locally_linear,
     ).to(device)
 

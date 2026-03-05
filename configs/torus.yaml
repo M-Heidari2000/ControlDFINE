@@ -35,6 +35,7 @@ train:
     a_dim: 3
     hidden_dim: 128
     min_var: 1e-2
+    max_var: 1.0
     locally_linear: False
     chunk_length: 32
     prediction_k: 8
