@@ -143,14 +143,14 @@ class Dynamics(nn.Module):
             A = I + self.alpha * self.A_head(hidden).reshape(b, self.x_dim, self.x_dim)
             B = self.B_head(hidden).reshape(b, self.x_dim, self.u_dim)
             C = self.C_head(hidden).reshape(b, self.a_dim, self.x_dim)
-            Nx = torch.diag_embed(nn.functional.softplus(self.nx_head(hidden)).clamp(min=self._min_var, max=self._max_var))
-            Na = torch.diag_embed(nn.functional.softplus(self.na_head(hidden)).clamp(min=self._min_var, max=self._max_var))
+            Nx = torch.diag_embed(self._min_var + (self._max_var - self._min_var) * torch.sigmoid(self.nx_head(hidden)))
+            Na = torch.diag_embed(self._min_var + (self._max_var - self._min_var) * torch.sigmoid(self.na_head(hidden)))
         else:
             A = self.A.expand(b, -1, -1)
             B = self.B.expand(b, -1, -1)
             C = self.C.expand(b, -1, -1)
-            Nx = torch.diag_embed(nn.functional.softplus(self.nx).clamp(min=self._min_var, max=self._max_var)).expand(b, -1, -1)
-            Na = torch.diag_embed(nn.functional.softplus(self.na).clamp(min=self._min_var, max=self._max_var)).expand(b, -1, -1)
+            Nx = torch.diag_embed(self._min_var + (self._max_var - self._min_var) * torch.sigmoid(self.nx)).expand(b, -1, -1)
+            Na = torch.diag_embed(self._min_var + (self._max_var - self._min_var) * torch.sigmoid(self.na)).expand(b, -1, -1)
 
         return A, B, C, Nx, Na
     
