@@ -212,6 +212,16 @@ def train_backbone(
                     config.backbone.kl_consistency_weight * kl_consistency
                 )
 
+                wandb.log({
+                    "test/y prediction loss": y_pred_loss.item(),
+                    "test/y filter loss": y_filter_loss.item(),
+                    "test/ae loss": ae_loss.item(),
+                    "test/total loss": total_loss.item(),
+                    "test/mean consistency": mean_consistency.item(),
+                    "test/kl consistency": kl_consistency.item(),
+                    "global_step": update,
+                })
+
             # test control performance
             cost_model = train_cost(
                 config=config.cost,
@@ -232,14 +242,8 @@ def train_backbone(
                 costs.append(trial(env=env, agent=agent))
             
             wandb.log({
-                "test/y prediction loss": y_pred_loss.item(),
-                "test/y filter loss": y_filter_loss.item(),
-                "test/ae loss": ae_loss.item(),
-                "test/total loss": total_loss.item(),
-                "test/mean consistency": mean_consistency.item(),
-                "test/kl consistency": kl_consistency.item(),
                 "test/mean cost": np.mean(costs).item(),
-                "test/std cost": np.std(costs.std().item()),
+                "test/std cost": np.std(costs).item(),
                 "global_step": update,
             })
                 
