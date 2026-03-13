@@ -8,7 +8,7 @@ def trial(
     env: gym.Env,
     agent: MPCAgent,
 ):
-    agent.reset()
+    obs, info = agent.reset()
     action = None
     done = False
     total_cost = np.array(0.0)
