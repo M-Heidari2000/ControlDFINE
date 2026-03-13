@@ -238,7 +238,8 @@ def train_backbone(
                     "test/total loss": total_loss.item(),
                     "test/mean consistency": mean_consistency.item(),
                     "test/kl consistency": kl_consistency.item(),
-                    "test/mean cost": np.mean()
+                    "test/mean cost": np.mean(costs).item(),
+                    "test/std cost": np.std(costs.std().item()),
                     "global_step": update,
                 })
                 
