@@ -14,8 +14,6 @@ from minari import MinariDataset
 from dfine.memory import ReplayBuffer
 from envs.utils import collect_data
 from dfine.train import train_backbone
-from dfine.evaluation import evaluate
-from dfine.utils import jsonify
 
 
 if __name__ == "__main__":
@@ -68,28 +66,13 @@ if __name__ == "__main__":
     # train and save the backbone
     logging.info("training backbone ...")
     encoder, decoder, dynamics_model = train_backbone(
-        config=config.train.backbone,
+        config=config.train,
         train_buffer=train_buffer,
         test_buffer=test_buffer,
+        env=env,
     )
     torch.save(encoder.state_dict(), save_dir / "encoder.pth")
     torch.save(decoder.state_dict(), save_dir / "decoder.pth")
     torch.save(dynamics_model.state_dict(), save_dir / "dynamics_model.pth")
-
-    # test the model
-    eval_results = evaluate(
-        eval_config=config.evaluation,
-        cost_train_config=config.train.cost,
-        env=env,
-        dynamics_model=dynamics_model,
-        encoder=encoder,
-        train_buffer=train_buffer,
-        test_buffer=test_buffer
-    )
-
-    eval_results = [jsonify(er) for er in eval_results]
-    with open(save_dir / "eval_results.json", "w") as f:
-        json.dump(eval_results, f, indent=2)
-    wandb.save(save_dir / "eval_results.json")
     
     wandb.finish()
