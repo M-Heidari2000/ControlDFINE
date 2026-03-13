@@ -212,36 +212,36 @@ def train_backbone(
                     config.backbone.kl_consistency_weight * kl_consistency
                 )
 
-                # test control performance
-                cost_model = train_cost(
-                    config=config.cost,
-                    encoder=encoder,
-                    dynamics_model=dynamics_model,
-                    train_buffer=train_buffer,
-                    test_buffer=test_buffer,
-                )
-                # create agent
-                agent = MPCAgent(
-                    encoder=encoder,
-                    dynamics_model=dynamics_model,
-                    cost_model=cost_model,
-                    planning_horizon=config.evaluation.planning_horizon,
-                )
-                costs = []
-                for _ in range(config.evaluation.num_trials):
-                    costs.append(trial(env=env, agent=agent))
-                
-                wandb.log({
-                    "test/y prediction loss": y_pred_loss.item(),
-                    "test/y filter loss": y_filter_loss.item(),
-                    "test/ae loss": ae_loss.item(),
-                    "test/total loss": total_loss.item(),
-                    "test/mean consistency": mean_consistency.item(),
-                    "test/kl consistency": kl_consistency.item(),
-                    "test/mean cost": np.mean(costs).item(),
-                    "test/std cost": np.std(costs.std().item()),
-                    "global_step": update,
-                })
+            # test control performance
+            cost_model = train_cost(
+                config=config.cost,
+                encoder=encoder,
+                dynamics_model=dynamics_model,
+                train_buffer=train_buffer,
+                test_buffer=test_buffer,
+            )
+            # create agent
+            agent = MPCAgent(
+                encoder=encoder,
+                dynamics_model=dynamics_model,
+                cost_model=cost_model,
+                planning_horizon=config.evaluation.planning_horizon,
+            )
+            costs = []
+            for _ in range(config.evaluation.num_trials):
+                costs.append(trial(env=env, agent=agent))
+            
+            wandb.log({
+                "test/y prediction loss": y_pred_loss.item(),
+                "test/y filter loss": y_filter_loss.item(),
+                "test/ae loss": ae_loss.item(),
+                "test/total loss": total_loss.item(),
+                "test/mean consistency": mean_consistency.item(),
+                "test/kl consistency": kl_consistency.item(),
+                "test/mean cost": np.mean(costs).item(),
+                "test/std cost": np.std(costs.std().item()),
+                "global_step": update,
+            })
                 
     return encoder, decoder, dynamics_model
 
