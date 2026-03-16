@@ -1,6 +1,5 @@
 import os
 import envs
-import json
 import wandb
 import torch
 import minari
@@ -12,7 +11,6 @@ from datetime import datetime
 from omegaconf import OmegaConf
 from minari import MinariDataset
 from dfine.memory import ReplayBuffer
-from envs.utils import collect_data
 from dfine.train import train_backbone
 
 
@@ -47,16 +45,9 @@ if __name__ == "__main__":
 
     # create env and collect data
     env = envs.make(config=config.env)
-    logger.info("collecting data ...")
-    collect_data(
-        env=env,
-        data_dir=save_dir / "data",
-        num_episodes=config.data.num_episodes,
-        action_repeat=config.data.action_repeat,
-    )
     
     # create replay buffers
-    dataset = MinariDataset(data=save_dir / "data")
+    dataset = MinariDataset(data=Path(config.data.data_dir) / "data")
     test_size = int(len(dataset) * config.data.test_ratio)
     train_size = len(dataset) - test_size
     train_data, test_data = minari.split_dataset(dataset=dataset, sizes=[train_size, test_size])

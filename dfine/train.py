@@ -3,7 +3,6 @@ import wandb
 import einops
 import numpy as np
 import gymnasium as gym
-import torch.nn as nn
 from tqdm import tqdm
 from omegaconf.dictconfig import DictConfig
 from .memory import ReplayBuffer
@@ -97,10 +96,9 @@ def train_backbone(
         kl_consistency = consistencies[1]
 
         filter_a = dynamics_model.get_a(bottle_mvn(posteriors).loc)
-        y_filter_loss = nn.MSELoss()(
-            decoder(filter_a),
-            einops.rearrange(y, "l b y -> (l b) y")
-        )
+        y_filter_loss = (
+            (decoder(filter_a) - einops.rearrange(y, "l b y -> (l b) y")) ** 2
+        ).sum(dim=-1).mean()
 
         y_pred_loss = 0.0
         for k in range(1, config.backbone.prediction_k+1):
@@ -113,7 +111,9 @@ def train_backbone(
             pred_a = dynamics_model.get_a(pred_dist.loc)
             pred_y = decoder(pred_a)
             true_y = einops.rearrange(y[k:config.backbone.chunk_length], "l b y -> (l b) y")
-            y_pred_loss += nn.MSELoss()(pred_y, true_y) * (config.backbone.chunk_length - k) / config.backbone.chunk_length
+            y_pred_loss += (
+                (pred_y - true_y) ** 2
+            ).sum(dim=-1).mean() * (config.backbone.chunk_length - k) / config.backbone.chunk_length
 
         # y prediction loss
         y_pred_loss /= config.backbone.prediction_k
@@ -121,7 +121,7 @@ def train_backbone(
         a_flatten = einops.rearrange(a, "l b a -> (l b) a")
         y_flatten = einops.rearrange(y, "l b y -> (l b) y")
         y_recon = decoder(a_flatten)
-        ae_loss = nn.MSELoss()(y_recon, y_flatten)
+        ae_loss = ((y_recon - y_flatten) ** 2).sum(dim=-1).mean()
 
         total_loss = (
             y_pred_loss +
@@ -178,10 +178,9 @@ def train_backbone(
                 kl_consistency = consistencies[1]
 
                 filter_a = dynamics_model.get_a(bottle_mvn(posteriors).loc)
-                y_filter_loss = nn.MSELoss()(
-                    decoder(filter_a),
-                    einops.rearrange(y, "l b y -> (l b) y")
-                )
+                y_filter_loss = (
+                    (decoder(filter_a) - einops.rearrange(y, "l b y -> (l b) y")) ** 2
+                ).sum(dim=-1).mean()
 
                 y_pred_loss = 0.0
                 for k in range(1, config.backbone.prediction_k+1):
@@ -194,7 +193,9 @@ def train_backbone(
                     pred_a = dynamics_model.get_a(pred_dist.loc)
                     pred_y = decoder(pred_a)
                     true_y = einops.rearrange(y[k:config.backbone.chunk_length], "l b y -> (l b) y")
-                    y_pred_loss += nn.MSELoss()(pred_y, true_y) * (config.backbone.chunk_length - k) / config.backbone.chunk_length
+                    y_pred_loss += (
+                        (pred_y - true_y) ** 2
+                    ).sum(dim=-1).mean() * (config.backbone.chunk_length - k) / config.backbone.chunk_length
 
                 # y prediction loss
                 y_pred_loss /= config.backbone.prediction_k
@@ -203,7 +204,7 @@ def train_backbone(
                 a_flatten = einops.rearrange(a, "l b a -> (l b) a")
                 y_flatten = einops.rearrange(y, "l b y -> (l b) y")
                 y_recon = decoder(a_flatten)
-                ae_loss = nn.MSELoss()(y_recon, y_flatten)
+                ae_loss = ((y_recon - y_flatten) ** 2).sum(dim=-1).mean()
 
                 total_loss = (
                     y_pred_loss +
@@ -264,10 +265,13 @@ def train_cost(
         u_dim=dynamics_model.u_dim,
     ).to(device)
 
+    # save requires_grad state so we can restore it after cost training
+    encoder_grad_state       = {p: p.requires_grad for p in encoder.parameters()}
+    dynamics_model_grad_state = {p: p.requires_grad for p in dynamics_model.parameters()}
+
     # freeze backbone models
     for p in encoder.parameters():
         p.requires_grad = False
-
     for p in dynamics_model.parameters():
         p.requires_grad = False
 
@@ -304,11 +308,14 @@ def train_cost(
         c = einops.rearrange(c, "b l 1 -> l b 1")
 
         _, posteriors = dynamics_model(a=a, u=u)  # x0:T-1
-        # compute cost loss
-        cost_loss = nn.MSELoss()(
-            cost_model(x=bottle_mvn(posteriors).loc, u=einops.rearrange(u, "l b u -> (l b) u")),
-            einops.rearrange(c, "l b 1 -> (l b) 1")
+        # cost loss  (cost_dim=1 so sum=squeeze, mean over L×B)
+        c_pred = cost_model(
+            x=bottle_mvn(posteriors).loc,
+            u=einops.rearrange(u, "l b u -> (l b) u"),
         )
+        c_true = einops.rearrange(c, "l b 1 -> (l b) 1")
+        cost_loss = ((c_pred - c_true) ** 2).sum(dim=-1).mean()
+
         optimizer.zero_grad()
         cost_loss.backward()
 
@@ -342,15 +349,22 @@ def train_cost(
                 c = einops.rearrange(c, "b l 1 -> l b 1")
 
                 _, posteriors = dynamics_model(a=a, u=u)  # x0:T-1
-                # compute cost loss
-                cost_loss = nn.MSELoss()(
-                    cost_model(x=bottle_mvn(posteriors).loc, u=einops.rearrange(u, "l b u -> (l b) u")),
-                    einops.rearrange(c, "l b 1 -> (l b) 1")
+                c_pred = cost_model(
+                    x=bottle_mvn(posteriors).loc,
+                    u=einops.rearrange(u, "l b u -> (l b) u"),
                 )
-                
+                c_true = einops.rearrange(c, "l b 1 -> (l b) 1")
+                cost_loss = ((c_pred - c_true) ** 2).sum(dim=-1).mean()
+
                 wandb.log({
                     "test/cost loss": cost_loss.item(),
                     "global_step": update,
                 })
+
+    # restore requires_grad so backbone training can continue
+    for p, state in encoder_grad_state.items():
+        p.requires_grad = state
+    for p, state in dynamics_model_grad_state.items():
+        p.requires_grad = state
 
     return cost_model
