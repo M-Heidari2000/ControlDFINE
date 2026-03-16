@@ -5,13 +5,13 @@ run_name: "DFINE"
 
 data:
   test_ratio: 0.2
-  num_episodes: 1000
-  action_repeat: 1
+  data_dir: "data_dir"
 
 env:
   name: pendulum
   horizon: 200
-  gravity: 0
+  gravity: 10.0
+  action_repeat: 2
 
 train:
   backbone:
