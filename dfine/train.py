@@ -7,7 +7,7 @@ from tqdm import tqdm
 from omegaconf.dictconfig import DictConfig
 from .memory import ReplayBuffer
 from .evaluation import trial
-from .agents import MPCAgent
+from .agents import MPCAgent, IMPCAgent
 from .utils import compute_consistency, bottle_mvn
 from torch.nn.utils import clip_grad_norm_
 from .models import (
@@ -232,12 +232,21 @@ def train_backbone(
                 test_buffer=test_buffer,
             )
             # create agent
-            agent = MPCAgent(
-                encoder=encoder,
-                dynamics_model=dynamics_model,
-                cost_model=cost_model,
-                planning_horizon=config.evaluation.planning_horizon,
-            )
+            if dynamics_model.locally_linear:
+                agent = IMPCAgent(
+                    encoder=encoder,
+                    dynamics_model=dynamics_model,
+                    cost_model=cost_model,
+                    planning_horizon=config.evaluation.planning_horizon,
+                    num_iterations=config.evaluation.num_iterations,
+                )
+            else:
+                agent = MPCAgent(
+                    encoder=encoder,
+                    dynamics_model=dynamics_model,
+                    cost_model=cost_model,
+                    planning_horizon=config.evaluation.planning_horizon,
+                )
             costs = []
             for _ in range(config.evaluation.num_trials):
                 costs.append(trial(env=env, agent=agent))

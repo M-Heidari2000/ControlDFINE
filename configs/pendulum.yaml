@@ -48,3 +48,4 @@ train:
   evaluation:
     num_trials: 5
     planning_horizon: 8
+    num_iterations: 10
