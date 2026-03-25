@@ -12,6 +12,9 @@ env:
   name: torus
   horizon: 100
   periodic: False
+  radius1: 1.0
+  radius2: 0.5
+  rotated: True
 
   A:
     - [1.0, 0.0]

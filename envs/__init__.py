@@ -18,6 +18,9 @@ def make(config: DictConfig):
                 horizon=config.horizon,
                 render_mode="rgb_array",
                 periodic=config.periodic,
+                radius1=config.radius1,
+                radius2=config.radius2,
+                rotated=config.rotated,
             )
         case "circle":
             env = Circle(
