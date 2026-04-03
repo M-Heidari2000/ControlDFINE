@@ -20,11 +20,26 @@ def patched_get_size(self) -> float:
 MinariStorage.get_size = patched_get_size
 
 
+def _sample_action(env: gym.Env, dist: str = "env", u_std: float = 0.3, u_max: float = 0.3) -> np.ndarray:
+    if dist == "env":
+        return env.action_space.sample()
+    shape = env.action_space.shape
+    if dist == "normal":
+        return np.clip(np.random.randn(*shape).astype(np.float32) * u_std, -1.0, 1.0)
+    elif dist == "uniform":
+        return np.random.uniform(-u_max, u_max, size=shape).astype(np.float32)
+    else:
+        raise ValueError(f"Unknown action distribution: {dist}")
+
+
 def collect_data(
     env: gym.Env,
     data_dir: Union[str, Path],
     num_episodes: int = 100,
     action_repeat: int = 1,
+    dist: str = "env",
+    u_std: float = 0.3,
+    u_max: float = 0.3,
 ) -> MinariStorage:
 
     data_dir = Path(data_dir)
@@ -54,12 +69,12 @@ def collect_data(
 
         done = False
         action_counter = 0
-        action = env.action_space.sample()
+        action = _sample_action(env, dist, u_std, u_max)
 
         while not done:
             
             if action_counter >= action_repeat:
-                action = env.action_space.sample()
+                action = _sample_action(env, dist, u_std, u_max)
                 action_counter = 0
             
             next_obs, reward, terminated, truncated, next_info = env.step(action=action)

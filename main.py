@@ -55,6 +55,9 @@ if __name__ == "__main__":
         data_dir=save_dir / "data",
         num_episodes=config.data.num_episodes,
         action_repeat=config.data.action_repeat,
+        dist=config.data.get("dist", "env"),
+        u_std=config.data.get("u_std", 0.3),
+        u_max=config.data.get("u_max", 0.3),
     )
     
     # create replay buffers

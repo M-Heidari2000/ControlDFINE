@@ -7,6 +7,9 @@ data:
   test_ratio: 0.2
   num_episodes: 1000
   action_repeat: 1
+  dist: normal  # env, normal, or uniform
+  u_std: 0.3   # std for normal dist
+  u_max: 0.3   # range for uniform dist [-u_max, u_max]
 
 env:
   name: cos
