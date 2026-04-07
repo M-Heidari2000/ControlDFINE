@@ -3,6 +3,7 @@ import numpy as np
 from mpc import mpc
 from mpc.mpc import QuadCost, LinDx
 from typing import Optional
+from sklearn.preprocessing import StandardScaler
 from torch.distributions import MultivariateNormal
 from .models import Encoder, Dynamics, CostModel
 
@@ -18,11 +19,13 @@ class MPCAgent:
         dynamics_model: Dynamics,
         cost_model: CostModel,
         planning_horizon: int,
+        scaler: StandardScaler,
         action_noise: float = 0.3,
     ):
         self.encoder = encoder
         self.dynamics_model = dynamics_model
         self.cost_model = cost_model
+        self.scaler = scaler
         self.planning_horizon = planning_horizon
         self.action_noise = action_noise
 
@@ -67,7 +70,8 @@ class MPCAgent:
         notes: if u_{t-1} is None then that's the first observation
         """
 
-        with torch.no_grad():    
+        with torch.no_grad():
+            y = self.scaler.transform(np.asarray(y, dtype=np.float32).reshape(1, -1)).flatten()
             y = torch.as_tensor(y, device=self.device).unsqueeze(0)
             a = self.encoder(y)
             if u is not None:

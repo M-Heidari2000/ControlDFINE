@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import gymnasium as gym
+from sklearn.preprocessing import StandardScaler
 from .agents import MPCAgent, OracleMPC
 from omegaconf.dictconfig import DictConfig
 from .models import Dynamics, Encoder
@@ -64,6 +65,7 @@ def evaluate(
     encoder: Encoder,
     train_buffer: ReplayBuffer,
     test_buffer: ReplayBuffer,
+    scaler: StandardScaler,
 ):
     target_regions = make_grid(
         low=env.state_space.low,
@@ -92,6 +94,7 @@ def evaluate(
                 dynamics_model=dynamics_model,
                 cost_model=cost_model,
                 planning_horizon=eval_config.planning_horizon,
+                scaler=scaler,
             )
 
             # create oracle
