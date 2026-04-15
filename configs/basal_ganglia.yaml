@@ -1,0 +1,156 @@
+seed: 0
+log_dir: "./log"
+notes: "basal_ganglia"
+run_name: "DFINE"
+
+data:
+  test_ratio: 0.2
+  data_dir: "data_dir"
+
+env:
+  name: basal_ganglia
+  horizon: 1000
+
+  # Physical action bounds — passed to BasalGanglia(action_low, action_high)
+  action_low:  [0.0,  0.0,   5.0e-5]   # pulse_amp (mA), pulse_freq (Hz), pulse_width (s)
+  action_high: [60.0, 200.0, 5.0e-4]
+
+  # Timing
+  dt:            0.01     # public step size (s)
+  dt_internal:   0.0001   # integration step size (s)
+  obs_sample_dt: 0.001    # observation sub-sampling interval (s)
+
+  # Population dynamics — PD branch (Muller & Robinson 2018)
+  alpha:   50.0
+  beta:    200.0
+  gamma_e: 116.0
+  sigma:   3.3
+  phi_n:   1.0
+  phi_n_std: 0.0
+
+  # DBS filter dynamics
+  dbs_alpha: 50.0
+  dbs_beta:  200.0
+
+  # DBS coupling strengths to STN, GPi/SNr, GPe
+  nu_zetax: -1.2
+  nu_p1x:    1.2
+  nu_p2x:    1.2
+
+  # Initial firing rates — PD low-firing oscillatory fixed point
+  q_init: [8.155, 8.155, 8.260, 4.219, 0.925, 0.297, 64.659, 70.712, 8.124]
+
+  # Maximum firing rates (s^-1)
+  qmax_e:    300.0
+  qmax_i:    300.0
+  qmax_r:    300.0   # reduced from healthy (500) for PD
+  qmax_s:    300.0
+  qmax_d1:   65.0
+  qmax_d2:   65.0
+  qmax_p1:   250.0
+  qmax_p2:   300.0
+  qmax_zeta: 500.0
+
+  # Sigmoid thresholds (s^-1)
+  theta_e:    14.0
+  theta_i:    14.0
+  theta_r:    13.0
+  theta_s:    13.0
+  theta_d1:   19.0
+  theta_d2:   19.0
+  theta_p1:   10.0
+  theta_p2:    9.0
+  theta_zeta: 10.0
+
+  # Connection strengths (nu, s) — PD values
+  nu_ee:     1.2
+  nu_ei:    -1.5
+  nu_es:     1.1
+  nu_re:     0.1
+  nu_rs:     0.1
+  nu_rp1:    0.0
+  nu_se:     1.5
+  nu_sr:    -0.1
+  nu_sp1:   -0.2
+  nu_sn:     0.5
+  nu_d1e:    0.1
+  nu_d1s:    1.0
+  nu_d1d1:  -0.02
+  nu_d2e:    0.1
+  nu_d2s:    0.1
+  nu_d2d2:  -0.02
+  nu_p1d1:  -0.2
+  nu_p1p2:  -0.02
+  nu_p1zeta: 1.0
+  nu_p2d2:  -0.8
+  nu_p2p2:  -0.2
+  nu_p2zeta: 2.4
+  nu_zetae:  1.3
+  nu_zetap2: -0.2
+
+  # Axonal delays (tau, s)
+  tau_ee:     0.0
+  tau_ei:     0.0
+  tau_es:     0.035
+  tau_ie:     0.0
+  tau_ii:     0.0
+  tau_re:     0.045
+  tau_rs:     0.002
+  tau_rp1:    0.003
+  tau_se:     0.045
+  tau_sr:     0.002
+  tau_sp1:    0.003
+  tau_sn:     0.0
+  tau_d1e:    0.002
+  tau_d1s:    0.002
+  tau_d1d1:   0.0
+  tau_d2e:    0.002
+  tau_d2s:    0.002
+  tau_d2d2:   0.0
+  tau_p1d1:   0.001
+  tau_p1p2:   0.001
+  tau_p1zeta: 0.001
+  tau_p2d2:   0.001
+  tau_p2p2:   0.0
+  tau_p2zeta: 0.001
+  tau_zetae:  0.001
+  tau_zetap2: 0.001
+
+train:
+  backbone:
+    num_updates: 5000
+    test_interval: 10
+    x_dim: 9
+    a_dim: 9
+    hidden_dim: 128
+    min_var: 1.0e-2
+    max_var: 1.0
+    locally_linear: False
+    chunk_length: 32
+    prediction_k: 8
+    batch_size: 128
+    lr: 1.0e-3
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+    clip_grad_norm: 1.0
+    disable_gpu: False
+    filtering_weight: 1.0
+    mean_consistency_weight: 0.05
+    kl_consistency_weight: 0.0
+    kl_free_nats: 3.0
+  cost:
+    num_updates: 2500
+    test_interval: 10
+    chunk_length: 32
+    batch_size: 256
+    lr: 3.0e-3
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+    clip_grad_norm: 1.0
+    disable_gpu: False
+  evaluation:
+    num_trials: 5
+    planning_horizon: 8
+    num_iterations: 10
+    num_candidates: 1000
+    num_elites: 100
