@@ -4,13 +4,14 @@ from mpc import mpc
 from mpc.mpc import QuadCost, LinDx
 from typing import Optional
 from torch.distributions import MultivariateNormal
+from sklearn.preprocessing import StandardScaler
 from .models import Encoder, Dynamics, CostModel
 
 
 class MPCAgent:
     """
         action planning by the MPC method
-        c = 0.5 * (x-q).T @ Q @ (x-q) + 0.5 * u.T @ R @ u
+        c = 0.5 * (x-q).T @ Q @ (x-q) + 0.5 * (u-r).T @ R @ (u-r)
     """
     def __init__(
         self,
@@ -18,12 +19,14 @@ class MPCAgent:
         dynamics_model: Dynamics,
         cost_model: CostModel,
         planning_horizon: int,
+        scaler: Optional[StandardScaler] = None,
         action_noise: float = 0.3,
     ):
         self.encoder = encoder
         self.dynamics_model = dynamics_model
         self.cost_model = cost_model
         self.planning_horizon = planning_horizon
+        self.scaler = scaler
         self.action_noise = action_noise
 
         self.device = next(encoder.parameters()).device
@@ -32,7 +35,7 @@ class MPCAgent:
         C = torch.block_diag(self.cost_model.Q, self.cost_model.R).expand(self.planning_horizon, 1, -1, -1)
         c = torch.cat([
             -self.cost_model.q @ self.cost_model.Q,
-            torch.zeros((1, self.cost_model.u_dim), device=self.device)
+            -self.cost_model.r @ self.cost_model.R,
         ], dim=1).expand(self.planning_horizon, -1, -1)
         F = torch.cat((self.dynamics_model.A, self.dynamics_model.B), dim=1).expand(self.planning_horizon, 1, -1, -1)
         f = torch.zeros((1, self.cost_model.x_dim), device=self.device).expand(self.planning_horizon, -1, -1)
@@ -67,7 +70,9 @@ class MPCAgent:
         notes: if u_{t-1} is None then that's the first observation
         """
 
-        with torch.no_grad():    
+        with torch.no_grad():
+            if self.scaler is not None:
+                y = self.scaler.transform(y.reshape(1, -1)).flatten()
             y = torch.as_tensor(y, device=self.device).unsqueeze(0)
             a = self.encoder(y)
             if u is not None:
@@ -109,6 +114,7 @@ class IMPCAgent:
         cost_model: CostModel,
         planning_horizon: int,
         num_iterations: int=10,
+        scaler: Optional[StandardScaler] = None,
         action_noise: float=0.3,
     ):
         self.encoder = encoder
@@ -116,6 +122,7 @@ class IMPCAgent:
         self.cost_model = cost_model
         self.planning_horizon = planning_horizon
         self.num_iterations = num_iterations
+        self.scaler = scaler
         self.action_noise = action_noise
         self.device = next(encoder.parameters()).device
 
@@ -123,7 +130,7 @@ class IMPCAgent:
         C = torch.block_diag(self.cost_model.Q, self.cost_model.R).expand(planning_horizon, 1, -1, -1)
         c = torch.cat([
             -self.cost_model.q @ self.cost_model.Q,
-            torch.zeros((1, self.cost_model.u_dim), device=self.device),
+            -self.cost_model.r @ self.cost_model.R,
         ], dim=1).expand(planning_horizon, -1, -1)
         self.quadcost = QuadCost(C, c)
 
@@ -159,6 +166,8 @@ class IMPCAgent:
         notes: if u_{t-1} is None then that's the first observation
         """
         with torch.no_grad():
+            if self.scaler is not None:
+                y = self.scaler.transform(y.reshape(1, -1)).flatten()
             y = torch.as_tensor(y, device=self.device).unsqueeze(0)
             a = self.encoder(y)
             if u is not None:

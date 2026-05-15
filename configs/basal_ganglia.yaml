@@ -5,11 +5,12 @@ run_name: "DFINE"
 
 data:
   test_ratio: 0.2
-  data_dir: "data_dir"
+  data_dir: "/home/heidaris/workspace/offline_data/bg_random_constant_9d"
 
 env:
   name: basal_ganglia
-  horizon: 1000
+  horizon_seconds: 10.0
+  reset_warmup_seconds: [2.0, 4.0]
 
   # Physical action bounds — passed to BasalGanglia(action_low, action_high)
   action_low:  [0.0,  0.0,   5.0e-5]   # pulse_amp (mA), pulse_freq (Hz), pulse_width (s)
@@ -18,7 +19,10 @@ env:
   # Timing
   dt:            0.01     # public step size (s)
   dt_internal:   0.0001   # integration step size (s)
-  obs_sample_dt: 0.001    # observation sub-sampling interval (s)
+  obs_sample_dt: 0.01     # observation sub-sampling interval (s)
+
+  # Reward
+  reward_window: 20       # rolling window size (public steps) for STN variance reward
 
   # Population dynamics — PD branch (Muller & Robinson 2018)
   alpha:   50.0
@@ -26,7 +30,7 @@ env:
   gamma_e: 116.0
   sigma:   3.3
   phi_n:   1.0
-  phi_n_std: 0.0
+  phi_n_std: 1.0
 
   # DBS filter dynamics
   dbs_alpha: 50.0
@@ -43,7 +47,7 @@ env:
   # Maximum firing rates (s^-1)
   qmax_e:    300.0
   qmax_i:    300.0
-  qmax_r:    300.0   # reduced from healthy (500) for PD
+  qmax_r:    300.0
   qmax_s:    300.0
   qmax_d1:   65.0
   qmax_d2:   65.0
@@ -118,38 +122,42 @@ env:
 
 train:
   backbone:
-    num_updates: 5000
-    test_interval: 10
-    x_dim: 9
-    a_dim: 9
+    num_updates: 10001
+    test_interval: 5000
+    x_dim: 5
+    a_dim: 5
     hidden_dim: 128
-    min_var: 1.0e-2
+    min_var: 1e-2
     max_var: 1.0
     locally_linear: False
-    chunk_length: 32
-    prediction_k: 8
+    chunk_length: 64
+    prediction_k: 16
     batch_size: 128
-    lr: 1.0e-3
-    eps: 1.0e-8
-    weight_decay: 1.0e-6
+    lr: 1e-2
+    eps: 1e-8
+    weight_decay: 1e-6
     clip_grad_norm: 1.0
     disable_gpu: False
-    filtering_weight: 1.0
-    mean_consistency_weight: 0.05
+    filtering_weight: 0.0
+    mean_consistency_weight: 0.0
     kl_consistency_weight: 0.0
-    kl_free_nats: 3.0
+    kl_free_nats: 0.0
+    sigreg_weight: 0.15
+    sigreg_knots: 17
+    sigreg_num_proj: 1024
+    gramian_weight: 0.0
   cost:
-    num_updates: 2500
+    num_updates: 25
     test_interval: 10
-    chunk_length: 32
+    chunk_length: 64
     batch_size: 256
-    lr: 3.0e-3
+    lr: 1e-2
     eps: 1.0e-8
     weight_decay: 1.0e-6
     clip_grad_norm: 1.0
     disable_gpu: False
   evaluation:
-    num_trials: 5
+    num_trials: 1
     planning_horizon: 8
     num_iterations: 10
     num_candidates: 1000

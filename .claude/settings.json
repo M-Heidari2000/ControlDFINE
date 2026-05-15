@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python create_eval_notebook.py)",
+      "Bash(python -c ' *)",
+      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\" && cat {}')",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import json; nb=json.load\\(open\\('/home/heidaris/workspace/ControlPlaNet/eval_planet_bg.ipynb'\\)\\); [print\\(i, c['id']\\) for i, c in enumerate\\(nb['cells']\\)]\")",
+      "Bash(mkdir -p /home/heidaris/workspace/DFINEPlusPlus/dfinepp /home/heidaris/workspace/DFINEPlusPlus/configs)",
+      "Bash(cp -r /home/heidaris/workspace/ControlDFINE/envs /home/heidaris/workspace/DFINEPlusPlus/envs)",
+      "Bash(python3 -c \"import torch; print\\(torch.__version__\\)\")",
+      "Read(//home/heidaris/**)",
+      "Read(//opt/**)",
+      "Bash(conda run -n control python -c ' *)",
+      "Bash(python -)",
+      "Bash(conda info *)",
+      "Bash(pyenv version *)",
+      "Bash(~/.pyenv/versions/3.10.14/bin/python -c \"import torch; print\\(torch.__version__\\)\")",
+      "Read(//usr/**)",
+      "Bash(pip show *)",
+      "Bash(/home/heidaris/workspace/ControlDFINE/venv/bin/python -c \"import torch; print\\(torch.__version__\\)\")",
+      "Bash(/home/heidaris/workspace/ControlDFINE/venv/bin/python -)"
+    ],
+    "additionalDirectories": [
+      "/home/heidaris/workspace/ControlPlaNet/envs",
+      "/home/heidaris/workspace/ControlPlaNet/configs",
+      "/home/heidaris/workspace/ControlPlaNet",
+      "/home/heidaris/workspace/DFINEPlusPlus/dfinepp",
+      "/home/heidaris/workspace/DFINEPlusPlus"
+    ]
+  }
+}

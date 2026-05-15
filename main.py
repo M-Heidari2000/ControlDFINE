@@ -4,12 +4,14 @@ import wandb
 import torch
 import minari
 import logging
+import joblib
 import argparse
 import numpy as np
 from pathlib import Path
 from datetime import datetime
 from omegaconf import OmegaConf
 from minari import MinariDataset
+from sklearn.preprocessing import StandardScaler
 from dfine.memory import ReplayBuffer
 from dfine.train import train_backbone
 
@@ -17,6 +19,9 @@ from dfine.train import train_backbone
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="DFINE")
     parser.add_argument("--config", type=str, help="path to the config file")
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="path to a previous run dir to load backbone weights from "
+                             "(encoder.pth, decoder.pth, dynamics_model.pth). Optimizer state is NOT loaded.")
     args = parser.parse_args()
     
     config = OmegaConf.load(args.config)
@@ -54,16 +59,31 @@ if __name__ == "__main__":
     train_buffer = ReplayBuffer.load_from_minari(dataset=train_data)
     test_buffer = ReplayBuffer.load_from_minari(dataset=test_data)
 
+    # fit scaler on training observations, normalise both buffers in-place
+    scaler = StandardScaler()
+    n_train = len(train_buffer)
+    scaler.fit(train_buffer.ys[:n_train])
+    train_buffer.ys[:n_train] = scaler.transform(train_buffer.ys[:n_train]).astype(np.float32)
+    n_test = len(test_buffer)
+    test_buffer.ys[:n_test] = scaler.transform(test_buffer.ys[:n_test]).astype(np.float32)
+    joblib.dump(scaler, save_dir / "scaler.joblib")
+
+    # normalize costs by train std so cost model targets are O(1)
+    cost_std = train_buffer.cs[:n_train].std() + 1e-8
+    train_buffer.cs[:n_train] /= cost_std
+    test_buffer.cs[:n_test]   /= cost_std
+
     # train and save the backbone
     logging.info("training backbone ...")
-    encoder, decoder, dynamics_model = train_backbone(
+    encoder, dynamics_model = train_backbone(
         config=config.train,
         train_buffer=train_buffer,
         test_buffer=test_buffer,
         env=env,
+        scaler=scaler,
+        checkpoint_dir=Path(args.checkpoint) if args.checkpoint is not None else None,
     )
     torch.save(encoder.state_dict(), save_dir / "encoder.pth")
-    torch.save(decoder.state_dict(), save_dir / "decoder.pth")
     torch.save(dynamics_model.state_dict(), save_dir / "dynamics_model.pth")
     
     wandb.finish()

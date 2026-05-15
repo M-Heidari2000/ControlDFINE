@@ -4,15 +4,17 @@ import einops
 import numpy as np
 import gymnasium as gym
 from tqdm import tqdm
+from pathlib import Path
+from typing import Optional
 from omegaconf.dictconfig import DictConfig
+from sklearn.preprocessing import StandardScaler
 from .memory import ReplayBuffer
 from .evaluation import trial
 from .agents import MPCAgent, IMPCAgent
-from .utils import compute_consistency, bottle_mvn
+from .utils import compute_consistency, bottle_mvn, SIGReg, hankel_singular_values
 from torch.nn.utils import clip_grad_norm_
 from .models import (
     Encoder,
-    Decoder,
     Dynamics,
     CostModel,
 )
@@ -23,18 +25,14 @@ def train_backbone(
     train_buffer: ReplayBuffer,
     test_buffer: ReplayBuffer,
     env: gym.Env,
+    scaler: Optional[StandardScaler] = None,
+    checkpoint_dir: Optional[Path] = None,
 ):
 
     # define models and optimizer
     device = "cuda" if (torch.cuda.is_available() and not config.backbone.disable_gpu) else "cpu"
 
     encoder = Encoder(
-        y_dim=train_buffer.y_dim,
-        a_dim=config.backbone.a_dim,
-        hidden_dim=config.backbone.hidden_dim,
-    ).to(device)
-
-    decoder = Decoder(
         y_dim=train_buffer.y_dim,
         a_dim=config.backbone.a_dim,
         hidden_dim=config.backbone.hidden_dim,
@@ -50,11 +48,18 @@ def train_backbone(
         locally_linear=config.backbone.locally_linear,
     ).to(device)
 
-    wandb.watch([encoder, dynamics_model, decoder], log="all", log_freq=10)
+    sigreg = SIGReg(knots=config.backbone.sigreg_knots, num_proj=config.backbone.sigreg_num_proj).to(device)
+
+    if checkpoint_dir is not None:
+        checkpoint_dir = Path(checkpoint_dir)
+        encoder.load_state_dict(torch.load(checkpoint_dir / "encoder.pth", map_location=device))
+        dynamics_model.load_state_dict(torch.load(checkpoint_dir / "dynamics_model.pth", map_location=device))
+        print(f"loaded backbone weights from {checkpoint_dir}")
+
+    wandb.watch([encoder, dynamics_model], log="all", log_freq=10)
 
     all_params = (
         list(encoder.parameters()) +
-        list(decoder.parameters()) + 
         list(dynamics_model.parameters())
     )
 
@@ -65,11 +70,10 @@ def train_backbone(
     )
 
     # train and test loop
-    for update in tqdm(range(config.backbone.num_updates)):
-        
+    for update in tqdm(range(1, config.backbone.num_updates + 1)):
+
         # train
         encoder.train()
-        decoder.train()
         dynamics_model.train()
 
         y, u, _, _ = train_buffer.sample(
@@ -96,11 +100,11 @@ def train_backbone(
         kl_consistency = consistencies[1]
 
         filter_a = dynamics_model.get_a(bottle_mvn(posteriors).loc)
-        y_filter_loss = (
-            (decoder(filter_a) - einops.rearrange(y, "l b y -> (l b) y")) ** 2
+        a_filter_loss = (
+            (filter_a - einops.rearrange(a, "l b a -> (l b) a")) ** 2
         ).sum(dim=-1).mean()
 
-        y_pred_loss = 0.0
+        a_pred_loss = 0.0
         for k in range(1, config.backbone.prediction_k+1):
             pred_dist = bottle_mvn(posteriors[0:config.backbone.chunk_length-k])
             for t in range(k):
@@ -109,25 +113,33 @@ def train_backbone(
                     u=einops.rearrange(u[t:config.backbone.chunk_length-k+t], "l b u -> (l b) u"),
                 )
             pred_a = dynamics_model.get_a(pred_dist.loc)
-            pred_y = decoder(pred_a)
-            true_y = einops.rearrange(y[k:config.backbone.chunk_length], "l b y -> (l b) y")
-            y_pred_loss += (
-                (pred_y - true_y) ** 2
+            # pred_y = decoder(pred_a)
+            # true_y = einops.rearrange(y[k:config.backbone.chunk_length], "l b y -> (l b) y")
+            true_a = einops.rearrange(a[k:config.backbone.chunk_length], "l b a -> (l b) a")
+            a_pred_loss += (
+                (pred_a - true_a) ** 2
             ).sum(dim=-1).mean() * (config.backbone.chunk_length - k) / config.backbone.chunk_length
 
-        # y prediction loss
-        y_pred_loss /= config.backbone.prediction_k
-        # autoencoder loss
-        a_flatten = einops.rearrange(a, "l b a -> (l b) a")
-        y_flatten = einops.rearrange(y, "l b y -> (l b) y")
-        y_recon = decoder(a_flatten)
-        ae_loss = ((y_recon - y_flatten) ** 2).sum(dim=-1).mean()
+        a_pred_loss /= config.backbone.prediction_k
+
+        #sigreg loss
+        sigreg_loss = sigreg(a)
+
+        # balanced gramian loss (global linear only)
+        # HSV rank is min(u_dim, a_dim); take min over non-trivially-zero SVs only
+        gramian_loss = torch.tensor(0.0, device=device)
+        if not dynamics_model.locally_linear:
+            hsv = hankel_singular_values(dynamics_model.A, dynamics_model.B, dynamics_model.C)
+            k = min(dynamics_model.u_dim, dynamics_model.a_dim)
+            gramian_loss = -torch.log(hsv.topk(k).values.min() + 1e-8)
 
         total_loss = (
-            y_pred_loss +
-            config.backbone.filtering_weight * y_filter_loss +
+            a_pred_loss +
+            config.backbone.filtering_weight * a_filter_loss +
             config.backbone.mean_consistency_weight * mean_consistency +
-            config.backbone.kl_consistency_weight * kl_consistency
+            config.backbone.kl_consistency_weight * kl_consistency +
+            config.backbone.sigreg_weight * sigreg_loss +
+            config.backbone.gramian_weight * gramian_loss
         )
 
         optimizer.zero_grad()
@@ -138,12 +150,13 @@ def train_backbone(
         scheduler.step()
 
         wandb.log({
-            "train/y prediction loss": y_pred_loss.item(),
-            "train/y filter loss": y_filter_loss.item(),
-            "train/ae loss": ae_loss.item(),
+            "train/a prediction loss": a_pred_loss.item(),
+            "train/a filter loss": a_filter_loss.item(),
             "train/total loss": total_loss.item(),
             "train/mean consistency": mean_consistency.item(),
             "train/kl consistency": kl_consistency.item(),
+            "train/sigreg loss": sigreg_loss.item(),
+            "train/gramian loss": gramian_loss.item(),
             "global_step": update,
         })
             
@@ -151,7 +164,6 @@ def train_backbone(
             # test
             with torch.no_grad():
                 encoder.eval()
-                decoder.eval()
                 dynamics_model.eval()
 
                 y, u, _, _ = test_buffer.sample(
@@ -178,11 +190,11 @@ def train_backbone(
                 kl_consistency = consistencies[1]
 
                 filter_a = dynamics_model.get_a(bottle_mvn(posteriors).loc)
-                y_filter_loss = (
-                    (decoder(filter_a) - einops.rearrange(y, "l b y -> (l b) y")) ** 2
+                a_filter_loss = (
+                    (filter_a - einops.rearrange(a, "l b a -> (l b) a")) ** 2
                 ).sum(dim=-1).mean()
 
-                y_pred_loss = 0.0
+                a_pred_loss = 0.0
                 for k in range(1, config.backbone.prediction_k+1):
                     pred_dist = bottle_mvn(posteriors[0:config.backbone.chunk_length-k])
                     for t in range(k):
@@ -191,35 +203,42 @@ def train_backbone(
                             u=einops.rearrange(u[t:config.backbone.chunk_length-k+t], "l b u -> (l b) u"),
                         )
                     pred_a = dynamics_model.get_a(pred_dist.loc)
-                    pred_y = decoder(pred_a)
-                    true_y = einops.rearrange(y[k:config.backbone.chunk_length], "l b y -> (l b) y")
-                    y_pred_loss += (
-                        (pred_y - true_y) ** 2
+                    # pred_y = decoder(pred_a)
+                    # true_y = einops.rearrange(y[k:config.backbone.chunk_length], "l b y -> (l b) y")
+                    true_a = einops.rearrange(a[k:config.backbone.chunk_length], "l b a -> (l b) a")
+                    a_pred_loss += (
+                        (pred_a - true_a) ** 2
                     ).sum(dim=-1).mean() * (config.backbone.chunk_length - k) / config.backbone.chunk_length
 
-                # y prediction loss
-                y_pred_loss /= config.backbone.prediction_k
+                a_pred_loss /= config.backbone.prediction_k
 
-                # autoencoder loss
-                a_flatten = einops.rearrange(a, "l b a -> (l b) a")
-                y_flatten = einops.rearrange(y, "l b y -> (l b) y")
-                y_recon = decoder(a_flatten)
-                ae_loss = ((y_recon - y_flatten) ** 2).sum(dim=-1).mean()
+                #sigreg loss
+                sigreg_loss = sigreg(a)
+
+                # balanced gramian loss (global linear only)
+                gramian_loss = torch.tensor(0.0, device=device)
+                if not dynamics_model.locally_linear:
+                    hsv = hankel_singular_values(dynamics_model.A, dynamics_model.B, dynamics_model.C)
+                    k = min(dynamics_model.u_dim, dynamics_model.a_dim)
+                    gramian_loss = -torch.log(hsv.topk(k).values.min() + 1e-8)
 
                 total_loss = (
-                    y_pred_loss +
-                    config.backbone.filtering_weight * y_filter_loss +
+                    a_pred_loss +
+                    config.backbone.filtering_weight * a_filter_loss +
                     config.backbone.mean_consistency_weight * mean_consistency +
-                    config.backbone.kl_consistency_weight * kl_consistency
+                    config.backbone.kl_consistency_weight * kl_consistency +
+                    config.backbone.sigreg_weight * sigreg_loss +
+                    config.backbone.gramian_weight * gramian_loss
                 )
 
                 wandb.log({
-                    "test/y prediction loss": y_pred_loss.item(),
-                    "test/y filter loss": y_filter_loss.item(),
-                    "test/ae loss": ae_loss.item(),
+                    "test/a prediction loss": a_pred_loss.item(),
+                    "test/a filter loss": a_filter_loss.item(),
                     "test/total loss": total_loss.item(),
                     "test/mean consistency": mean_consistency.item(),
                     "test/kl consistency": kl_consistency.item(),
+                    "test/sigreg loss": sigreg_loss.item(),
+                    "test/gramian loss": gramian_loss.item(),
                     "global_step": update,
                 })
 
@@ -239,6 +258,7 @@ def train_backbone(
                     cost_model=cost_model,
                     planning_horizon=config.evaluation.planning_horizon,
                     num_iterations=config.evaluation.num_iterations,
+                    scaler=scaler,
                 )
             else:
                 agent = MPCAgent(
@@ -246,6 +266,7 @@ def train_backbone(
                     dynamics_model=dynamics_model,
                     cost_model=cost_model,
                     planning_horizon=config.evaluation.planning_horizon,
+                    scaler=scaler,
                 )
             costs = []
             for _ in range(config.evaluation.num_trials):
@@ -257,7 +278,7 @@ def train_backbone(
                 "global_step": update,
             })
                 
-    return encoder, decoder, dynamics_model
+    return encoder, dynamics_model
 
 
 def train_cost(

@@ -22,13 +22,13 @@ current public step.
 
 Reward
 ------
-Negative variance of the STN ("zeta", index 8) firing-rate sub-trace
-inside the current observation window:
+Negative beta-band (13–30 Hz) power of the STN ("zeta", index 8) firing-rate
+trace across the rolling observation buffer (200 ms at 1 ms resolution):
 
-    reward = -Var( obs.reshape(10, 9)[:, 8] )
+    reward = -sum(PSD[13–30 Hz]) / sum(PSD)   ∈ [-1, 0]
 
-High beta oscillation  →  high variance  →  large negative reward.
-Suppressed oscillation →  low variance   →  reward near 0.
+High beta synchrony   →  large fraction in beta band  →  reward near -1.
+Suppressed beta       →  small fraction in beta band  →  reward near  0.
 
 Episode end
 -----------
@@ -37,7 +37,8 @@ truncated  = True after `horizon` steps.
 """
 
 import math
-from typing import Optional
+import collections
+from typing import Optional, Sequence
 
 import numpy as np
 import torch
@@ -600,7 +601,9 @@ class BasalGanglia(gym.Env):
         self,
         action_low:  Optional[np.ndarray] = None,
         action_high: Optional[np.ndarray] = None,
-        horizon: int = 1000,
+        horizon_seconds: float = 10.0,
+        reset_warmup_seconds: Sequence[float] = (2.0, 10.0),
+        reward_window: int = 20,
         **plant_kwargs,
     ):
         super().__init__()
@@ -613,7 +616,10 @@ class BasalGanglia(gym.Env):
         assert np.all(self.action_low < self.action_high), "action_low must be strictly less than action_high"
 
         self.plant   = _BasalGangliaPlant(**plant_kwargs)
-        self.horizon = horizon
+        self.horizon = int(horizon_seconds / self.plant.dt)
+        self.reset_warmup_seconds_range = self._parse_warmup_seconds_range(
+            reset_warmup_seconds, field_name="reset_warmup_seconds"
+        )
         self.y_dim   = self.plant.dim_y                           # 90 with default config
         self.obs_samples_per_step = self.plant.obs_samples_per_step   # 10
 
@@ -641,20 +647,55 @@ class BasalGanglia(gym.Env):
         )
 
         self._step = 0
+        self._reward_window = reward_window
+        self._obs_buffer: collections.deque = collections.deque(maxlen=reward_window)
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _normalize_action(self, action_physical: np.ndarray) -> np.ndarray:
+        """Map physical DBS parameters to normalised [-1, 1]^3."""
+        a = np.asarray(action_physical, dtype=np.float32)
+        return np.clip(2.0 * (a - self.action_low) / (self.action_high - self.action_low) - 1.0, -1.0, 1.0)
 
     def _denormalize_action(self, action: np.ndarray) -> np.ndarray:
         """Map normalised [-1, 1]^3 to physical DBS parameters."""
         a = np.clip(action, -1.0, 1.0).astype(np.float32)
         return self.action_low + (a + 1.0) / 2.0 * (self.action_high - self.action_low)
 
-    def _compute_reward(self, obs: np.ndarray) -> float:
-        """Negative variance of the STN firing-rate sub-trace in this obs window."""
-        stn_trace = obs.reshape(self.obs_samples_per_step, self.x_dim)[:, _STN_IDX]
-        return -float(np.var(stn_trace))
+    def _compute_reward(self) -> float:
+        """Negative relative beta-band (13–30 Hz) power of the STN trace; always in [-1, 0]."""
+        fs = self.obs_samples_per_step / self.plant.dt
+        stn_trace = np.concatenate([
+            obs.reshape(self.obs_samples_per_step, self.x_dim)[:, _STN_IDX]
+            for obs in self._obs_buffer
+        ])
+        freqs = np.fft.rfftfreq(len(stn_trace), d=1.0 / fs)
+        psd   = np.abs(np.fft.rfft(stn_trace)) ** 2
+        beta_mask = (freqs >= 13) & (freqs <= 30)
+        return -float(psd[beta_mask].sum() / (psd.sum() + 1e-8))
+
+    @staticmethod
+    def _parse_warmup_seconds_range(spec: Sequence[float], field_name: str) -> tuple[float, float]:
+        """Parse warmup seconds setting as a [low_sec, high_sec] range."""
+        if isinstance(spec, Sequence) and not isinstance(spec, (str, bytes)):
+            if len(spec) != 2:
+                raise ValueError(f"{field_name} sequence must have length 2: [min_seconds, max_seconds]")
+            lo = float(spec[0])
+            hi = float(spec[1])
+            if lo < 0 or hi < 0:
+                raise ValueError(f"{field_name} values must be >= 0")
+            if lo > hi:
+                raise ValueError(f"{field_name} must satisfy min_seconds <= max_seconds")
+            return (lo, hi)
+
+        raise TypeError(f"{field_name} must be a length-2 sequence of seconds")
+
+    def _sample_warmup_steps(self, warmup_seconds_range: tuple[float, float]) -> int:
+        lo_sec, hi_sec = warmup_seconds_range
+        warmup_seconds = lo_sec if math.isclose(lo_sec, hi_sec) else float(self.np_random.uniform(lo_sec, hi_sec))
+        return int(math.ceil(warmup_seconds / self.plant.dt))
 
     # ------------------------------------------------------------------
     # Gym API
@@ -663,9 +704,26 @@ class BasalGanglia(gym.Env):
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
 
+        warmup_seconds_range = self.reset_warmup_seconds_range
+        if options is not None and "warmup_seconds" in options:
+            warmup_seconds_range = self._parse_warmup_seconds_range(
+                options["warmup_seconds"], field_name="options['warmup_seconds']"
+            )
+        warmup_steps = self._sample_warmup_steps(warmup_seconds_range)
+
         # horizon + 1: init_state logs step 0, then we take exactly `horizon`
         # steps reaching index horizon before the plant's internal guard fires.
-        self.plant.init_state(num_seqs=1, num_steps=self.horizon + 1)
+        # Add warmup_steps so pre-rollout integration does not shorten the episode.
+        self.plant.init_state(num_seqs=1, num_steps=self.horizon + warmup_steps + 1)
+
+        if warmup_steps > 0:
+            # Warm up with the minimum bounds-valid physical action.
+            # For the default config this is [0, 0, 5e-5], which produces no pulses
+            # because frequency is zero while keeping pulse width in-range.
+            u_physical = self.action_low.copy()
+            u_tensor = torch.as_tensor(u_physical).unsqueeze(0)
+            for _ in range(warmup_steps):
+                self.plant.step(u_tensor)
 
         # .numpy().copy() is required: plant tensors are modified in-place on
         # every subsequent step() call, so we must own our own arrays.
@@ -673,6 +731,8 @@ class BasalGanglia(gym.Env):
         state = self.plant.q.squeeze(0).numpy().copy()    # (x_dim,)
 
         self._step = 0
+        self._obs_buffer.clear()
+        self._obs_buffer.append(obs)
         return obs, {"state": state}
 
     def step(self, action: np.ndarray):
@@ -684,7 +744,8 @@ class BasalGanglia(gym.Env):
         obs   = self.plant.obs.squeeze(0).numpy().copy()  # (y_dim,)
         state = self.plant.q.squeeze(0).numpy().copy()    # (x_dim,)
 
-        reward     = self._compute_reward(obs)
+        self._obs_buffer.append(obs)
+        reward     = self._compute_reward()
         self._step += 1
         terminated = False
         truncated  = bool(self._step >= self.horizon)

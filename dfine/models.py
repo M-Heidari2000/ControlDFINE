@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Optional
 import torch.nn.init as init
 from torch.distributions import MultivariateNormal
@@ -19,6 +20,7 @@ class Encoder(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ELU(),
             nn.Linear(hidden_dim, a_dim),
+            nn.BatchNorm1d(a_dim, affine=False),
         )
 
     def forward(self, y: torch.Tensor):
@@ -57,15 +59,17 @@ class CostModel(nn.Module):
         self.A = nn.Parameter(torch.eye(self.x_dim, dtype=torch.float32))
         self.q = nn.Parameter(torch.randn((1, self.x_dim), dtype=torch.float32))
         self.register_buffer("R", 1e-6 * torch.eye(self.u_dim, dtype=torch.float32))
+        self.register_buffer("r", torch.zeros((1, self.u_dim), dtype=torch.float32))
 
     @property
     def Q(self):
         return self.A @ self.A.T
 
     def forward(self, x: torch.Tensor, u: torch.Tensor):
-        res = x - self.q
-        xQx = torch.einsum("bi,ij,bj->b", res, self.Q, res)
-        uRu = torch.einsum("bi,ij,bj->b", u, self.R, u)
+        res_x = x - self.q
+        res_u = u - self.r
+        xQx = torch.einsum("bi,ij,bj->b", res_x, self.Q, res_x)
+        uRu = torch.einsum("bi,ij,bj->b", res_u, self.R, res_u)
         cost = 0.5 * (xQx + uRu).reshape(-1, 1)
         return cost
     
@@ -108,22 +112,26 @@ class Dynamics(nn.Module):
             self.C_head = nn.Linear(hidden_dim, a_dim * x_dim)
             self.nx_head = nn.Linear(hidden_dim, x_dim)
             self.na_head = nn.Linear(hidden_dim, a_dim)
-            self.alpha = nn.Parameter(torch.tensor([1e-2]))
+            self.alpha = nn.Parameter(torch.tensor([1e-1]))
 
-            self._init_weights()
         else:
-            self.A = nn.Parameter(torch.eye(x_dim))
+            # Stable A: A = D^{1/2} Q (D+I)^{-1/2}  (iLQR-VAE Appendix C.1, U=I)
+            # d_raw -> D via softplus; S_raw -> Q = expm(S - S^T) unitary
+            self.d_raw = nn.Parameter(torch.zeros(x_dim))
+            self.S_raw = nn.Parameter(torch.zeros(x_dim, x_dim))
             self.B = nn.Parameter(torch.randn(x_dim, u_dim))
             self.C = nn.Parameter(torch.randn(a_dim, x_dim))
             self.nx = nn.Parameter(torch.randn(x_dim))
-            self.na = nn.Parameter(torch.randn(a_dim)) 
+            self.na = nn.Parameter(torch.randn(a_dim))
 
-    def _init_weights(self):
-        for m in self.backbone.modules():
-            if isinstance(m, nn.Linear):
-                init.orthogonal_(m.weight, gain=nn.init.calculate_gain("relu"))
-                if m.bias is not None:
-                    init.zeros_(m.bias)
+    @property
+    def A(self) -> torch.Tensor:
+        """Stable state matrix: spectral radius < 1 by construction."""
+        d = F.softplus(self.d_raw)
+        D_half = torch.diag(d.sqrt())
+        D_inv_half = torch.diag((d + 1).rsqrt())
+        Q = torch.matrix_exp(self.S_raw - self.S_raw.mT)
+        return D_half @ Q @ D_inv_half
 
     def make_psd(self, P, eps=1e-6):
         b = P.shape[0]
@@ -140,7 +148,7 @@ class Dynamics(nn.Module):
         if self.locally_linear:
             hidden = self.backbone(x)
             I = torch.eye(self.x_dim, device=x.device).expand(b, -1, -1)
-            A = I + self.alpha * self.A_head(hidden).reshape(b, self.x_dim, self.x_dim)
+            A = I - self.alpha * self.A_head(hidden).reshape(b, self.x_dim, self.x_dim)
             B = self.B_head(hidden).reshape(b, self.x_dim, self.u_dim)
             C = self.C_head(hidden).reshape(b, self.a_dim, self.x_dim)
             Nx = torch.diag_embed(self._min_var + (self._max_var - self._min_var) * torch.sigmoid(self.nx_head(hidden)))
@@ -207,7 +215,11 @@ class Dynamics(nn.Module):
         G = torch.einsum('bij,bjk,bkl->bil', cov, C.transpose(1, 2), torch.linalg.pinv(S))
         innovation = a - torch.einsum('bij,bj->bi', C, mean)
         next_mean = mean + torch.einsum('bij,bj->bi', G, innovation)
-        next_cov = cov - torch.einsum('bij,bjk,bkl->bil', G, C, cov)
+        b = cov.shape[0]
+        I = torch.eye(self.x_dim, device=cov.device, dtype=cov.dtype).expand(b, -1, -1)
+        I_GC = I - torch.einsum('bij,bjk->bik', G, C)
+        next_cov = (torch.einsum('bij,bjk,bkl->bil', I_GC, cov, I_GC.mT)
+                    + torch.einsum('bij,bjk,bkl->bil', G, Na, G.mT))
         next_cov = self.make_psd(next_cov)
         updated_dist = MultivariateNormal(loc=next_mean, covariance_matrix=next_cov)
 

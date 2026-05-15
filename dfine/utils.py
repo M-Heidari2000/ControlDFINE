@@ -65,3 +65,56 @@ def jsonify(d: Dict[str, Any]) -> Dict[str, Any]:
         else:
             out[k] = v
     return out
+
+
+def solve_discrete_lyapunov(A: torch.Tensor, Q: torch.Tensor) -> torch.Tensor:
+    """
+    Solve W = A W Aᵀ + Q via (I − A⊗A) vec(W) = vec(Q).
+    A must have spectral radius < 1.
+    """
+    n = A.shape[0]
+    I = torch.eye(n * n, device=A.device, dtype=A.dtype)
+    W = torch.linalg.solve(I - torch.kron(A, A), Q.reshape(-1)).reshape(n, n)
+    return 0.5 * (W + W.mT)
+
+
+def hankel_singular_values(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor) -> torch.Tensor:
+    """
+    Infinite-horizon discrete-time Hankel singular values via vec() Lyapunov solves.
+      W_c = A W_c Aᵀ + BBᵀ  →  (I − A⊗A)  vec(W_c) = vec(BBᵀ)
+      W_o = Aᵀ W_o A + CᵀC  →  (I − Aᵀ⊗Aᵀ) vec(W_o) = vec(CᵀC)
+      HSVs = sqrt(eig(W_c W_o))
+    """
+    W_c = solve_discrete_lyapunov(A, B @ B.mT)
+    W_o = solve_discrete_lyapunov(A.mT, C.mT @ C)
+    eigvals = torch.linalg.eigvals(W_c @ W_o).real
+    return eigvals.clamp(min=0).sqrt()
+
+
+class SIGReg(torch.nn.Module):
+    """Sketch Isotropic Gaussian Regularizer (single-GPU!)"""
+
+    def __init__(self, knots=17, num_proj=1024):
+        super().__init__()
+        self.num_proj = num_proj
+        t = torch.linspace(0, 3, knots, dtype=torch.float32)
+        dt = 3 / (knots - 1)
+        weights = torch.full((knots,), 2 * dt, dtype=torch.float32)
+        weights[[0, -1]] = dt
+        window = torch.exp(-t.square() / 2.0)
+        self.register_buffer("t", t)
+        self.register_buffer("phi", window)
+        self.register_buffer("weights", weights * window)
+
+    def forward(self, proj):
+        """
+        proj: (T, B, D)
+        """
+        # sample random projections
+        A = torch.randn(proj.size(-1), self.num_proj, device=proj.device)
+        A = A.div_(A.norm(p=2, dim=0))
+        # compute the epps-pulley statistic
+        x_t = (proj @ A).unsqueeze(-1) * self.t
+        err = (x_t.cos().mean(-3) - self.phi).square() + x_t.sin().mean(-3).square()
+        statistic = (err @ self.weights) * proj.size(-2)
+        return statistic.mean() # average over projections and time

@@ -14,11 +14,14 @@ def make(config: DictConfig):
                 action_repeat=config.action_repeat,
             )
         case "basal_ganglia":
+            _explicit = {"name", "horizon_seconds", "action_low", "action_high", "reset_warmup_seconds", "reward_window"}
             env = BasalGanglia(
-                horizon=config.horizon,
+                horizon_seconds=config.horizon_seconds,
                 action_low=list(config.action_low),
                 action_high=list(config.action_high),
-                **{k: v for k, v in config.items() if k not in ("name", "horizon", "action_low", "action_high")},
+                reset_warmup_seconds=list(config.reset_warmup_seconds),
+                reward_window=config.get("reward_window", 20),
+                **{k: v for k, v in config.items() if k not in _explicit},
             )
         case _:
             raise ValueError(f"env {config.name} not found!")
