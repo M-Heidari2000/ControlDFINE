@@ -33,7 +33,6 @@ train:
     a_dim: 1
     hidden_dim: 128
     min_var: 1e-2
-    max_var: 1.0
     locally_linear: False
     chunk_length: 48
     prediction_k: 8
@@ -47,6 +46,10 @@ train:
     mean_consistency_weight: 0.0
     kl_consistency_weight: 0.0
     kl_free_nats: 0.0
+    sigreg_weight: 0.1
+    sigreg_knots: 17
+    sigreg_num_proj: 1024
+    gramian_weight: 0.0
   cost:
     num_updates: 2500
     test_interval: 10

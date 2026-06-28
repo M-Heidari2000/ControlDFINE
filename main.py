@@ -23,6 +23,9 @@ from dfine.utils import jsonify
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="DFINE")
     parser.add_argument("--config", type=str, help="path to the config file")
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="path to a run dir to load backbone weights from "
+                             "(encoder.pth, dynamics_model.pth). Optimizer state is NOT loaded.")
     args = parser.parse_args()
     
     config = OmegaConf.load(args.config)
@@ -79,13 +82,13 @@ if __name__ == "__main__":
 
     # train and save the backbone
     logging.info("training backbone ...")
-    encoder, decoder, dynamics_model = train_backbone(
+    encoder, dynamics_model = train_backbone(
         config=config.train.backbone,
         train_buffer=train_buffer,
         test_buffer=test_buffer,
+        checkpoint_dir=Path(args.checkpoint) if args.checkpoint is not None else None,
     )
     torch.save(encoder.state_dict(), save_dir / "encoder.pth")
-    torch.save(decoder.state_dict(), save_dir / "decoder.pth")
     torch.save(dynamics_model.state_dict(), save_dir / "dynamics_model.pth")
 
     # test the model

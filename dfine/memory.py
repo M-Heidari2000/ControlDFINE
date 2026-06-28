@@ -113,4 +113,5 @@ class ReplayBuffer:
         target = target.astype(np.float32).reshape(1, -1)
         new_buffer = copy.deepcopy(self)
         new_buffer.cs = np.linalg.norm(new_buffer.xs - target, axis=1, keepdims=True) ** 2
+        new_buffer.cs /= new_buffer.cs.std() + 1e-8
         return new_buffer

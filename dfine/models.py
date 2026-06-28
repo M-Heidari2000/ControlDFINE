@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Optional
 import torch.nn.init as init
 from torch.distributions import MultivariateNormal
@@ -83,7 +84,6 @@ class Dynamics(nn.Module):
         a_dim: int,
         hidden_dim: Optional[int]=128,
         min_var: float=1e-2,
-        max_var: float=1.0,
         locally_linear: Optional[bool]=False,
     ):
         super().__init__()
@@ -92,7 +92,6 @@ class Dynamics(nn.Module):
         self.u_dim = u_dim
         self.a_dim = a_dim
         self._min_var = min_var
-        self._max_var = max_var
         self.locally_linear = locally_linear
 
         if self.locally_linear:
@@ -112,11 +111,15 @@ class Dynamics(nn.Module):
 
             self._init_weights()
         else:
-            self.A = nn.Parameter(torch.eye(x_dim))
-            self.B = nn.Parameter(torch.randn(x_dim, u_dim))
+            # Stable A: A = D^{1/2} Q (D+I)^{-1/2}  (iLQR-VAE Appendix C.1)
+            # d_raw -> D via softplus (positive); S_raw -> Q = expm(S - S^T) unitary
+            # singular values = sqrt(d/(d+1)) < 1  →  spectral radius < 1 by construction
+            self.d_raw = nn.Parameter(torch.zeros(x_dim))
+            self.S_raw = nn.Parameter(torch.zeros(x_dim, x_dim))
+            self.B_raw = nn.Parameter(torch.randn(x_dim, u_dim))
             self.C = nn.Parameter(torch.randn(a_dim, x_dim))
             self.nx = nn.Parameter(torch.randn(x_dim))
-            self.na = nn.Parameter(torch.randn(a_dim)) 
+            self.na = nn.Parameter(torch.randn(a_dim))
 
     def _init_weights(self):
         for m in self.backbone.modules():
@@ -124,6 +127,20 @@ class Dynamics(nn.Module):
                 init.orthogonal_(m.weight, gain=nn.init.calculate_gain("relu"))
                 if m.bias is not None:
                     init.zeros_(m.bias)
+
+    @property
+    def A(self) -> torch.Tensor:
+        """Stable state matrix: spectral radius < 1 by construction."""
+        d = F.softplus(self.d_raw)
+        D_half     = torch.diag(d.sqrt())
+        D_inv_half = torch.diag((d + 1).rsqrt())
+        Q = torch.matrix_exp(self.S_raw - self.S_raw.mT)
+        return D_half @ Q @ D_inv_half
+
+    @property
+    def B(self) -> torch.Tensor:
+        """B with unit Frobenius norm so the controllability gramian scale is determined by A alone."""
+        return self.B_raw / self.B_raw.norm(p='fro')
 
     def make_psd(self, P, eps=1e-6):
         b = P.shape[0]
@@ -140,17 +157,17 @@ class Dynamics(nn.Module):
         if self.locally_linear:
             hidden = self.backbone(x)
             I = torch.eye(self.x_dim, device=x.device).expand(b, -1, -1)
-            A = I + self.alpha * self.A_head(hidden).reshape(b, self.x_dim, self.x_dim)
+            A = I - self.alpha * self.A_head(hidden).reshape(b, self.x_dim, self.x_dim)
             B = self.B_head(hidden).reshape(b, self.x_dim, self.u_dim)
             C = self.C_head(hidden).reshape(b, self.a_dim, self.x_dim)
-            Nx = torch.diag_embed(self._min_var + (self._max_var - self._min_var) * torch.sigmoid(self.nx_head(hidden)))
-            Na = torch.diag_embed(self._min_var + (self._max_var - self._min_var) * torch.sigmoid(self.na_head(hidden)))
+            Nx = torch.diag_embed(F.softplus(self.nx_head(hidden)) + self._min_var)
+            Na = torch.diag_embed(F.softplus(self.na_head(hidden)) + self._min_var)
         else:
             A = self.A.expand(b, -1, -1)
             B = self.B.expand(b, -1, -1)
             C = self.C.expand(b, -1, -1)
-            Nx = torch.diag_embed(self._min_var + (self._max_var - self._min_var) * torch.sigmoid(self.nx)).expand(b, -1, -1)
-            Na = torch.diag_embed(self._min_var + (self._max_var - self._min_var) * torch.sigmoid(self.na)).expand(b, -1, -1)
+            Nx = torch.diag_embed(F.softplus(self.nx) + self._min_var).expand(b, -1, -1)
+            Na = torch.diag_embed(F.softplus(self.na) + self._min_var).expand(b, -1, -1)
 
         return A, B, C, Nx, Na
     
